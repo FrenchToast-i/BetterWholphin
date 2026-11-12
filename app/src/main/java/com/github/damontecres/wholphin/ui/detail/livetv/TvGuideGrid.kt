@@ -113,7 +113,11 @@ fun TvGuideGrid(
             LaunchedEffect(Unit) {
                 focusRequester.tryRequestFocus()
             }
-            var focusedPosition by rememberPosition(0, 0)
+            // The header describes the programme the viewer is actually on. It used to be
+            // derived from a saved (row, column) pair, but a column in the guide is a global
+            // programme index, not an index into that channel's own list, so lookups ran off the
+            // end and the header stayed hidden. The focused cell reports itself instead.
+            var focusedProgram by remember { mutableStateOf<TvProgram?>(null) }
             // A tuner usually has listings for only some of its channels, and a sports tuner is
             // the extreme case: every fixture gets a channel and a programme days early, while
             // the rest of the list has no schedule at all. Drawing all 34 channels turned twelve
@@ -128,13 +132,6 @@ fun TvGuideGrid(
                     // No listings anywhere is not an empty guide: the fallback below draws the
                     // channels themselves, and hiding them would leave a blank page.
                     listed.ifEmpty { state.channels }
-                }
-            val focusedProgram =
-                remember(focusedPosition) {
-                    focusedPosition.let {
-                        val channelId = guideChannels.getOrNull(it.row)?.id
-                        state.programs.programsByChannel[channelId]?.getOrNull(it.column)
-                    }
                 }
             // A tuner with no listings is not a broken guide: it is a tuner that has not been
             // refreshed yet. Forty-eight hours of "No data" per channel is worse than a sentence,
@@ -210,7 +207,6 @@ fun TvGuideGrid(
                             showChannelDialog = index to channel
                         },
                         onFocus = {
-                            focusedPosition = it
                             // The grid draws a subset but the ViewModel pages over the tuner's
                             // whole channel list, so the row is translated back before asking for
                             // more listings; otherwise deep scrolling stops fetching.
@@ -220,6 +216,7 @@ fun TvGuideGrid(
                                     ?.takeIf { index -> index >= 0 } ?: it.row
                             viewModel.onFocusChannel(RowColumn(originalRow, it.column))
                         },
+                        onFocusProgram = { focusedProgram = it },
                         onClickProgram = { index, program ->
                             if (program.isFake) {
                                 val now = LocalDateTime.now()
@@ -376,6 +373,7 @@ fun TvGuideGridContent(
     onClickChannel: (Int, TvChannel) -> Unit,
     onClickProgram: (Int, TvProgram) -> Unit,
     onFocus: (RowColumn) -> Unit,
+    onFocusProgram: (TvProgram) -> Unit,
     focusRequester: FocusRequester,
     modifier: Modifier = Modifier,
 ) {
@@ -591,6 +589,17 @@ fun TvGuideGridContent(
                                 if (it.isFocused) {
                                     focusedChannelIndex = -1
                                     focusedProgramIndex = programIndex
+                                    // Report the cell in the terms the header understands: the
+                                    // channel's row and the programme's place in that channel's
+                                    // own list, not its index in the flat programme array.
+                                    val channelIndex = channels.indexOfFirst { it.id == program.channelId }
+                                    val column =
+                                        programs.programsByChannel[program.channelId]
+                                            ?.indexOfFirst { it.id == program.id }
+                                            ?.takeIf { it >= 0 } ?: 0
+                                    focusedItem = RowColumn(channelIndex, column)
+                                    onFocus.invoke(focusedItem)
+                                    onFocusProgram.invoke(program)
                                     scope.launch {
                                         try {
                                             state.animateToProgram(
