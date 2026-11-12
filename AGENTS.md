@@ -688,6 +688,11 @@
 - One tag, one release. `v1.2.0` builds `assembleDefaultRelease`, renames the APKs to
   `Wholphin.apk` / `Wholphin-<abi>.apk`, and publishes them as the latest release. The updater
   compares the **release title** with `versionName`, so the title stays the bare tag.
+- `versionCode` is the repository's commit count (`git rev-list --count HEAD`), not the number of
+  tags. A fork does not carry every upstream tag — pushing them all would also run the release
+  workflow once per tag — so a tag count differs between a developer checkout and CI, and Android
+  refuses a build whose `versionCode` went backwards. The commit count is identical in both and
+  only grows.
 - The signing key is not in the repository. It lives at `~/.config/betterwholphin/release.jks`
   locally and in the repository secrets `SIGNING_KEY` (base64), `KEY_ALIAS`, `KEY_PASSWORD` and
   `KEY_STORE_PASSWORD`. The first release-signed install must be a clean uninstall of any debug
