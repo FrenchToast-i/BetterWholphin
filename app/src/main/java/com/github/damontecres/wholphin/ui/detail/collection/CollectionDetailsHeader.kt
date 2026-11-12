@@ -22,6 +22,7 @@ import com.github.damontecres.wholphin.ui.components.OverviewText
 import com.github.damontecres.wholphin.ui.components.QuickDetails
 import com.github.damontecres.wholphin.ui.components.TitleOrLogo
 import com.github.damontecres.wholphin.ui.letNotEmpty
+import com.github.damontecres.wholphin.ui.theme.LocalLiquidGlass
 import com.github.damontecres.wholphin.util.ExceptionHandler
 import kotlinx.coroutines.launch
 
@@ -59,6 +60,9 @@ fun CollectionDetailsHeader(
                 collection.ui.quickDetails,
                 collection.timeRemainingOrRuntime,
                 Modifier.padding(start = HeaderUtils.startPadding),
+                // One ellipsized line inside the pane: a Row of texts clips its last piece at the
+                // pane's edge instead of ending the sentence with an ellipsis.
+                oneLine = LocalLiquidGlass.current,
             )
 
             dto.genres?.letNotEmpty {

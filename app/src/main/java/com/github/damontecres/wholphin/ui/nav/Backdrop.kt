@@ -51,6 +51,7 @@ fun Backdrop(
     enableTopScrim: Boolean = true,
     useExistingImageAsPlaceholder: Boolean = false,
     crossfadeDuration: Duration = 800.milliseconds,
+    fullBleed: Boolean = false,
 ) {
     val backdrop by viewModel.backdropService.backdropFlow.collectAsStateWithLifecycle()
     Backdrop(
@@ -61,6 +62,7 @@ fun Backdrop(
         enableTopScrim = enableTopScrim,
         useExistingImageAsPlaceholder = useExistingImageAsPlaceholder,
         crossfadeDuration = crossfadeDuration,
+        fullBleed = fullBleed,
     )
 }
 
@@ -76,6 +78,7 @@ fun Backdrop(
     enableTopScrim: Boolean = true,
     useExistingImageAsPlaceholder: Boolean = false,
     crossfadeDuration: Duration = 800.milliseconds,
+    fullBleed: Boolean = false,
 ) {
     val isRtl = LocalLayoutDirection.current == LayoutDirection.Rtl
     val baseBackgroundColor = MaterialTheme.colorScheme.background
@@ -161,15 +164,58 @@ fun Backdrop(
                         .transitionFactory(CrossFadeFactory(crossfadeDuration))
                         .build(),
                 contentDescription = null,
-                contentScale = ContentScale.Fit,
-                alignment = Alignment.TopEnd,
+                contentScale = if (fullBleed) ContentScale.Crop else ContentScale.Fit,
+                alignment = if (fullBleed) Alignment.Center else Alignment.TopEnd,
                 modifier =
                     Modifier
-                        .align(Alignment.TopEnd)
-                        .fillMaxHeight(.7f)
-                        .fillMaxWidth(.7f)
-                        .graphicsLayer(compositingStrategy = CompositingStrategy.Offscreen)
+                        .then(
+                            if (fullBleed) {
+                                Modifier.fillMaxSize()
+                            } else {
+                                Modifier
+                                    .align(Alignment.TopEnd)
+                                    .fillMaxHeight(.7f)
+                                    .fillMaxWidth(.7f)
+                            },
+                        ).graphicsLayer(compositingStrategy = CompositingStrategy.Offscreen)
                         .drawWithContent {
+                            if (fullBleed) {
+                                // Full-frame artwork: glass can only refract what is actually
+                                // behind it, and a corner thumbnail leaves most panes sampling
+                                // nothing but background. The scrims keep type readable without
+                                // flattening the image into a grey wash.
+                                // Light scrims only: the artwork is the thing the glass
+                                // refracts, so every bit of it that gets covered by a black
+                                // wash is glass the viewer cannot see.
+                                drawContent()
+                                drawRect(
+                                    brush =
+                                        Brush.horizontalGradient(
+                                            colorStops =
+                                                arrayOf(
+                                                    0f to Color.Black.copy(alpha = 0.30f),
+                                                    0.50f to Color.Black.copy(alpha = 0.10f),
+                                                    1f to Color.Black.copy(alpha = 0.02f),
+                                                ),
+                                        ),
+                                )
+                                // Heavier at the bottom than the top: shelves and row titles sit
+                                // there, and white type over sunlit artwork needs a floor. The
+                                // middle stays clear so the frame still reads as the artwork.
+                                drawRect(
+                                    brush =
+                                        Brush.verticalGradient(
+                                            colorStops =
+                                                arrayOf(
+                                                    0f to Color.Black.copy(alpha = 0.16f),
+                                                    0.40f to Color.Black.copy(alpha = 0.04f),
+                                                    0.70f to Color.Black.copy(alpha = 0.16f),
+                                                    1f to Color.Black.copy(alpha = 0.55f),
+                                                ),
+                                        ),
+                                )
+                                return@drawWithContent
+                            }
                             val start = if (isRtl) size.width else 0f
                             drawContent()
                             if (drawerIsOpen) {

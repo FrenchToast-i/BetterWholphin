@@ -73,11 +73,15 @@
     <string name="max_bitrate">Max bitrate</string>
     <string name="more_like_this">More like this</string>
     <string name="more">More</string>
+    <string name="discovery">Discovery</string>
+    <string name="seerr_enabled">Seerr requests</string>
+    <string name="seerr_enabled_summary">Show this profile\'s Requests, Discover and request actions. The connection itself is shared with the household.</string>
     <string name="movies_title">Movies</string>
     <string name="name">Name</string>
     <string name="next_up">Next Up</string>
     <string name="no_data">No data</string>
     <string name="no_results">No results</string>
+    <string name="search_no_results_message">Nothing in your library matches “%1$s”</string>
     <string name="no_servers_found">No servers found</string>
     <string name="no_scheduled_recordings">No scheduled recordings</string>
     <string name="no_update_available">No update available</string>
@@ -92,6 +96,12 @@
     <string name="playback_debug_info">Show playback debug info</string>
     <string name="playback_speed">Playback Speed</string>
     <string name="playback">Playback</string>
+    <string name="sleep_timer">Sleep timer</string>
+    <string name="sleep_timer_off">Off</string>
+    <string name="sleep_timer_in">In %1$s</string>
+    <string name="sleep_timer_at_bedtime">At bedtime · %1$s</string>
+    <string name="sleep_timer_remaining">Sleep in %1$s</string>
+    <string name="sleep_timer_ended">Sleep timer ended — playback stopped</string>
     <string name="playlist">Playlist</string>
     <string name="playlists">Playlists</string>
     <string name="preview">Preview</string>
@@ -112,6 +122,10 @@
     <string name="save">Save</string>
     <string name="search_and_download"><![CDATA[Search & Download]]></string>
     <string name="search">Search</string>
+    <string name="glass_search_hint">Search movies, shows, people, and more</string>
+    <string name="glass_search_placeholder">Search your library</string>
+    <string name="recent_searches">Recent searches</string>
+    <string name="clear_recent_searches">Clear</string>
     <string name="searching">Searching…</string>
     <string name="voice_search">Voice search</string>
     <string name="voice_starting">Starting</string>
@@ -132,11 +146,15 @@
     <string name="voice_error_timeout">Voice recognition timed out</string>
     <string name="retry">Retry</string>
     <string name="select_server">Select Server</string>
+    <string name="select_server_summary">Choose a server, or add a new one</string>
     <string name="select_user">Select User</string>
     <string name="show_debug_info">Show debug info</string>
     <string name="show_next_up_when">Show next up</string>
     <string name="show">Show</string>
     <string name="shuffle">Shuffle</string>
+    <string name="play_something">Play something</string>
+    <string name="play_something_empty">Nothing to play yet</string>
+    <string name="play_something_failed">Could not reach the server</string>
     <string name="skip">Skip</string>
     <string name="sort_by_date_added">Date Added</string>
     <string name="sort_by_date_episode_added">Date Episode Added</string>
@@ -158,6 +176,11 @@
     <string name="trailers_title">Trailers</string>
     <string name="tv_dvr_schedule">DVR Schedule</string>
     <string name="tv_guide">Guide</string>
+    <!-- Sports: a public NFL guide, with the viewer's own Live TV as the way to watch. -->
+    <string name="sports">Sports</string>
+    <string name="sports_live">Live</string>
+    <string name="live_tv_channel_not_streaming">This channel is not streaming yet</string>
+    <string name="close">Close</string>
     <string name="tv_season">Season</string>
     <string name="tv_seasons">Seasons</string>
     <string name="season_episode_number">S%1$d E%2$d</string>
@@ -183,6 +206,12 @@
     <string name="play_with_transcoding">Play with transcoding</string>
     <string name="media_information">Media Information</string>
     <string name="show_clock">Show Clock</string>
+    <string name="top_bar_home">Show Home</string>
+    <string name="top_bar_now_playing">Show Now Playing</string>
+    <string name="top_bar_search">Show Search</string>
+    <string name="top_bar_settings">Show Settings</string>
+    <string name="top_bar_profile">Show Profile</string>
+    <string name="top_bar_play_something">Show Play Something</string>
     <string name="aired_episode_order">Aired Episode Order</string>
     <string name="create_playlist">Create new playlist</string>
     <string name="add_to_playlist">Add to playlist</string>
@@ -325,6 +354,13 @@
     <string name="advanced_settings">Advanced Settings</string>
     <string name="advanced_ui">Advanced UI</string>
     <string name="app_theme">Application Theme</string>
+    <string name="liquid_glass_mode">Liquid Glass mode</string>
+    <string name="liquid_glass_mode_summary">Floating glass panels and an Apple TV-style layout. Saved for this profile.</string>
+    <string name="liquid_glass_play">Play</string>
+    <string name="liquid_glass_resume">Resume</string>
+    <string name="liquid_glass_details">Details</string>
+    <string name="liquid_glass_browse">Browse</string>
+    <string name="liquid_glass_libraries">Libraries</string>
     <string name="auto_check_for_updates">Automatically check for updates</string>
     <string name="auto_play_next_delay">Delay before playing next up</string>
     <string name="auto_play_next">Auto play next up</string>
@@ -475,6 +511,27 @@
     <string name="sample_rate_unit">Hz</string>
     <string name="show_titles">Show titles</string>
     <string name="live_tv_repeat">Repeat</string>
+    <string name="live_tv_channels">Channels</string>
+    <string name="live_tv_channel_count">%1$d channels</string>
+    <string name="live_tv_channels_error">Could not load your Live TV channels</string>
+    <string name="live_tv_no_channels_title">No channels</string>
+    <string name="live_tv_no_channels_message">Live TV is set up on this server, but no channels were found. Add a tuner in Jellyfin and the channels will appear here.</string>
+    <string name="live_tv_no_guide_title">No guide data yet</string>
+    <string name="live_tv_no_guide_message">Your tuner has %1$d channels and every one of them plays. Jellyfin has no listings for them yet: refresh the guide in Jellyfin to see what is on.</string>
+    <string name="live_tv_sports_on_now">On now</string>
+    <string name="live_tv_sports_also_live">Also live</string>
+    <string name="live_tv_sports_next_up">Next up</string>
+    <string name="live_tv_sports_today">Today</string>
+    <string name="live_tv_sports_tomorrow">Tomorrow</string>
+    <string name="live_tv_sports_summary_live">%1$d live · %2$d coming up</string>
+    <string name="live_tv_sports_summary_next">%1$d coming up</string>
+    <string name="live_tv_sports_watch">Watch</string>
+    <string name="live_tv_sports_no_games_now">No game is on right now</string>
+    <string name="live_tv_sports_coverage_starts">Coverage starts at %1$s</string>
+    <string name="live_tv_sports_empty_title">No sports listings yet</string>
+    <string name="live_tv_sports_empty_message">Your channels are live, but Jellyfin has no guide data for them yet. Refresh the guide in Jellyfin and the games will appear here — every channel below is ready to watch now.</string>
+    <string name="live_tv_sports_none_title">No games in the guide</string>
+    <string name="live_tv_sports_none_message">Your Live TV has listings, but none of them are sport in the next two days. A game appears here as soon as your tuner publishes it; every channel below is ready to watch now.</string>
     <string name="favorite_channels_at_beginning">Show favorite channels first</string>
     <string name="sort_channels_recently_watched">Sort channels by recently watched</string>
     <string name="color_code_programs">Color-code programs</string>
@@ -986,4 +1043,104 @@
     <string name="home_settings_source_web">User web client</string>
     <string name="managed_by_server">Managed by server</string>
     <string name="error">Error</string>
+    <string name="tmdb_api_key">TMDB API key</string>
+    <string name="tmdb_api_key_summary">Optional. Adds discovery rows to Search and Home. Saved for this profile and never logged.</string>
+    <string name="tmdb_trending">Trending this week</string>
+    <string name="tmdb_top_ten">Top 10 on TMDB this week</string>
+    <string name="seerr_requests">Your requests</string>
+    <string name="seerr_requests_summary">What Seerr is getting for you</string>
+    <string name="seerr_request_badge_pending">Requested</string>
+    <string name="seerr_request_badge_processing">Downloading</string>
+    <string name="seerr_request_badge_partial">Partly here</string>
+    <string name="tmdb_search_heading">Also on TMDB</string>
+    <string name="tmdb_because_watching">Because you\'re watching %1$s</string>
+    <string name="tmdb_find_in_library">Search your library</string>
+    <string name="tmdb_attribution">This product uses the TMDB API but is not endorsed or certified by TMDB.</string>
+    <string name="tmdb_unavailable">Could not reach TMDB</string>
+    <string name="tmdb_key_rejected">TMDB rejected this key. Check it in Settings.</string>
+    <string name="tmdb_request">Request</string>
+    <string name="tmdb_requesting">Requesting…</string>
+    <string name="tmdb_requested">Requested</string>
+    <string name="tmdb_request_hint">Not in your library. Request it and it will appear here when it is ready.</string>
+    <string name="tmdb_request_pending">Requested — waiting for approval.</string>
+    <string name="tmdb_request_processing">Requested — downloading now.</string>
+    <string name="tmdb_request_partial">Some of this is already in your library.</string>
+    <string name="tmdb_request_available">In your library.</string>
+    <string name="tmdb_request_blocked">Your server has blocked this title.</string>
+    <string name="tmdb_request_disabled">Requests are disabled for your account.</string>
+    <string name="tmdb_request_failed">Could not reach Seerr. Try again.</string>
+    <string name="tmdb_open_in_library">Open in library</string>
+    <string name="tmdb_watchlist">My List</string>
+    <string name="tmdb_watchlist_add">Save</string>
+    <string name="tmdb_watchlist_saved">In My List</string>
+    <string name="for_you">For You</string>
+    <string name="for_you_reason_seed">Because you watched %1$s</string>
+    <string name="for_you_reason_genre">Because you watch %1$s</string>
+    <string name="for_you_reason_genres">Because you watch %1$s and %2$s</string>
+    <string name="for_you_reason_history">From your watch history</string>
+
+    <!-- Tonight: the time-aware plan for the evening -->
+    <string name="tonight">Tonight</string>
+    <string name="bedtime">Bedtime</string>
+    <string name="bedtime_summary">Tonight suggests something you can finish before this.</string>
+    <string-array name="bedtimes">
+        <item>9:00 PM</item>
+        <item>9:30 PM</item>
+        <item>10:00 PM</item>
+        <item>10:30 PM</item>
+        <item>11:00 PM</item>
+        <item>11:30 PM</item>
+        <item>12:00 AM</item>
+        <item>12:30 AM</item>
+        <item>1:00 AM</item>
+    </string-array>
+    <string name="tonight_until_bedtime">%1$s until bedtime</string>
+    <string name="tonight_late_night">Late night</string>
+    <string name="tonight_not_tonight">Not tonight</string>
+    <string name="tonight_ends_at">Ends at %1$s</string>
+    <string name="tonight_to_spare">%1$s to spare</string>
+    <string name="tonight_plenty_of_time">Plenty of time</string>
+    <string name="tonight_past_bedtime">%1$s past bedtime</string>
+    <string name="tonight_late_window">Finished by %1$s</string>
+    <!-- The card already shows the title and the episode name: the reason line adds the *why*,
+         and repeating the show under its own logo reads like a rendering mistake. -->
+    <string name="tonight_reason_continue">Continue where you left off</string>
+    <string name="tonight_reason_next_episode">The next unwatched episode</string>
+    <string name="tonight_reason_taste">Because you like %1$s</string>
+    <string name="tonight_reason_top_pick">Chosen for tonight</string>
+    <string name="tonight_shelf_fits">Done before bed</string>
+    <string name="tonight_shelf_fits_subtitle">Finished before %1$s</string>
+    <string name="tonight_shelf_fits_late">Short enough for right now</string>
+    <string name="tonight_shelf_finish_line">One episode left</string>
+    <string name="tonight_shelf_finish_line_subtitle">Series you could finish tonight</string>
+    <string name="tonight_shelf_gems">Hidden gems</string>
+    <string name="tonight_shelf_gems_subtitle">Highly rated, still unwatched</string>
+    <string name="tonight_shelf_because">Because you watched %1$s</string>
+    <string name="tonight_shelf_because_subtitle">More like it</string>
+    <string name="tonight_shelf_lane">A different lane</string>
+    <string name="tonight_shelf_lane_subtitle">Great titles outside your usual genres</string>
+    <string name="tonight_shelf_comfort">Comfort rewatch</string>
+    <string name="tonight_shelf_comfort_subtitle">Familiar favourites you have not seen in a while</string>
+    <string name="tonight_empty_title">Nothing to plan yet</string>
+    <string name="tonight_empty_body">Watch something once and this page will start building your evenings around the clock.</string>
+
+    <!-- Watch together (SyncPlay) -->
+    <string name="watch_together">Watch together</string>
+    <string name="watch_party_description">Play in sync with another television or the Jellyfin app. Every device on this server can join from Watch together.</string>
+    <string name="watch_party_start">Start a watch party</string>
+    <string name="watch_party_join">Join a room</string>
+    <string name="watch_party_leave">Leave party</string>
+    <string name="watch_party_none">No one is watching together yet. Start a party and it appears here on every device.</string>
+    <string name="watch_party_members">%1$d watching</string>
+    <string name="watch_party_waiting">Waiting for everyone</string>
+    <string name="watch_party_playing">Playing</string>
+    <string name="watch_party_paused">Paused</string>
+    <string name="watch_party_unavailable">This server does not support watch parties</string>
+    <string name="watch_party_not_allowed">This profile is not allowed to start a watch party</string>
+    <string name="watch_party_joined_waiting">Joined %1$s — waiting for the host to start</string>
+    <string name="watch_party_user_joined">%1$s joined the watch party</string>
+    <string name="watch_party_user_left">%1$s left the watch party</string>
+    <string name="watch_party_ended">The watch party ended</string>
+    <string name="watch_party_refresh">Refresh</string>
+    <string name="watch_party_room_number">%1$d of %2$d</string>
 </resources>

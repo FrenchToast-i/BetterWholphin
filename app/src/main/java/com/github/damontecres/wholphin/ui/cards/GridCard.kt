@@ -77,6 +77,10 @@ fun GridCard(
             onClick = onClick,
             onLongClick = onLongClick,
             interactionSource = interactionSource,
+            shape = glassCardShape(),
+            border = glassCardBorder(),
+            glow = glassCardGlow(),
+            scale = glassCardScale(),
             colors =
                 CardDefaults.colors(
                     containerColor = Color.Transparent,

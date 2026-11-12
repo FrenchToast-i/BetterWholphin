@@ -48,6 +48,7 @@ import com.github.damontecres.wholphin.ui.listToDotString
 import com.github.damontecres.wholphin.ui.main.HomePageHeader
 import com.github.damontecres.wholphin.ui.nav.Destination
 import com.github.damontecres.wholphin.ui.rememberPosition
+import com.github.damontecres.wholphin.ui.theme.LocalLiquidGlass
 import com.github.damontecres.wholphin.ui.tryRequestFocus
 import com.github.damontecres.wholphin.ui.util.EmptyStringProvider
 import com.github.damontecres.wholphin.ui.util.ResProviderStringProvider
@@ -445,14 +446,19 @@ fun SeerrDiscoverPage(
             endsAt = null,
             showLogo = preferences.appPreferences.interfacePreferences.showLogos,
             logoImageUrl = focusedItem?.logoUrl,
+            // A glass pane measures to its content; the classic slot is fixed.
             modifier =
-                Modifier
-                    .padding(
-                        top = HeaderUtils.topPadding,
-                        // Intentionally no bottom padding because of tabs
-                        bottom = 0.dp,
-                        start = HeaderUtils.startPadding,
-                    ).height(HeaderUtils.height),
+                if (LocalLiquidGlass.current) {
+                    HeaderUtils.glassModifier
+                } else {
+                    Modifier
+                        .padding(
+                            top = HeaderUtils.topPadding,
+                            // Intentionally no bottom padding because of tabs
+                            bottom = 0.dp,
+                            start = HeaderUtils.startPadding,
+                        ).height(HeaderUtils.height)
+                },
         )
 
         val density = LocalDensity.current

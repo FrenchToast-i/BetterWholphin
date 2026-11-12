@@ -31,11 +31,14 @@ import androidx.navigation3.runtime.NavBackStack
 import androidx.tv.material3.ExperimentalTvMaterial3Api
 import androidx.tv.material3.MaterialTheme
 import androidx.tv.material3.Surface
+import com.github.damontecres.wholphin.data.RestoredSession
 import com.github.damontecres.wholphin.data.ServerRepository
+import com.github.damontecres.wholphin.data.model.JellyfinUser
 import com.github.damontecres.wholphin.preferences.AppPreferences
 import com.github.damontecres.wholphin.preferences.PlayerBackend
 import com.github.damontecres.wholphin.services.AppUpgradeHandler
 import com.github.damontecres.wholphin.services.BackdropService
+import com.github.damontecres.wholphin.services.ContinuityService
 import com.github.damontecres.wholphin.services.DatePlayedInvalidationService
 import com.github.damontecres.wholphin.services.DeviceProfileService
 import com.github.damontecres.wholphin.services.ImageUrlService
@@ -53,6 +56,7 @@ import com.github.damontecres.wholphin.services.SuggestionsSchedulerService
 import com.github.damontecres.wholphin.services.UpdateChecker
 import com.github.damontecres.wholphin.services.UserPreferencesService
 import com.github.damontecres.wholphin.services.UserSwitchListener
+import com.github.damontecres.wholphin.services.WatchPartyService
 import com.github.damontecres.wholphin.services.hilt.AuthOkHttpClient
 import com.github.damontecres.wholphin.services.tvprovider.TvProviderSchedulerService
 import com.github.damontecres.wholphin.ui.CoilConfig
@@ -61,6 +65,7 @@ import com.github.damontecres.wholphin.ui.collectLatestIn
 import com.github.damontecres.wholphin.ui.components.LoadingPage
 import com.github.damontecres.wholphin.ui.launchDefault
 import com.github.damontecres.wholphin.ui.nav.Destination
+import com.github.damontecres.wholphin.ui.nav.DestinationCodec
 import com.github.damontecres.wholphin.ui.playback.PlayExternalViewModel
 import com.github.damontecres.wholphin.ui.showToast
 import com.github.damontecres.wholphin.ui.theme.WholphinTheme
@@ -69,7 +74,6 @@ import com.github.damontecres.wholphin.ui.util.ProvideLocalClock
 import com.github.damontecres.wholphin.util.DebugLogTree
 import com.github.damontecres.wholphin.util.ExceptionHandler
 import com.github.damontecres.wholphin.util.WholphinDispatchers
-import com.github.damontecres.wholphin.util.requestSerializersModule
 import dagger.hilt.android.AndroidEntryPoint
 import dagger.hilt.android.lifecycle.HiltViewModel
 import dagger.hilt.android.qualifiers.ApplicationContext
@@ -82,7 +86,6 @@ import kotlinx.coroutines.launch
 import kotlinx.coroutines.sync.Mutex
 import kotlinx.coroutines.sync.withLock
 import kotlinx.coroutines.withContext
-import kotlinx.serialization.json.Json
 import okhttp3.OkHttpClient
 import timber.log.Timber
 import javax.inject.Inject
@@ -98,6 +101,15 @@ class MainActivity : AppCompatActivity() {
 
     @Inject
     lateinit var userPreferencesService: UserPreferencesService
+
+    /**
+     * Injected for its side effect. A watch party is announced over the server's socket, so the
+     * service has to be alive before the first player opens: created lazily by the first
+     * playback page, a room opened on another television would go unnoticed until that page
+     * happened to be composed.
+     */
+    @Inject
+    lateinit var watchPartyService: WatchPartyService
 
     @AuthOkHttpClient
     @Inject
@@ -153,12 +165,6 @@ class MainActivity : AppCompatActivity() {
     private var signInAuto = true
     private var playerBackend: PlayerBackend? = null
 
-    private val json =
-        Json {
-            classDiscriminator = "_type"
-            serializersModule = requestSerializersModule
-        }
-
     @OptIn(ExperimentalTvMaterial3Api::class)
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
@@ -167,19 +173,8 @@ class MainActivity : AppCompatActivity() {
         lifecycle.addObserver(playbackLifecycleObserver)
 
         val backStackStr = savedInstanceState?.getString(KEY_BACK_STACK)
-        val restoredBackStack =
-            if (backStackStr != null) {
-                try {
-                    json.decodeFromString<List<Destination>>(backStackStr)
-                } catch (ex: Exception) {
-                    // Best-effort: a previously persisted back stack we can no longer decode
-                    // must not crash startup; fall back to a fresh start destination.
-                    Timber.w(ex, "Could not restore back stack; starting fresh")
-                    null
-                }
-            } else {
-                null
-            }
+        val restoredBackStack = backStackStr?.let { DestinationCodec.decode(it) }
+
         if (restoredBackStack != null) {
             Timber.d("Restoring back stack")
             var backStack = restoredBackStack
@@ -266,6 +261,7 @@ class MainActivity : AppCompatActivity() {
                                 WholphinTheme(
                                     true,
                                     appThemeColors = appPreferences.interfacePreferences.appThemeColors,
+                                    liquidGlass = userPreferences.liquidGlass,
                                 ) {
                                     ProvideLocalClock {
                                         MainContent(
@@ -356,13 +352,8 @@ class MainActivity : AppCompatActivity() {
     override fun onSaveInstanceState(outState: Bundle) {
         super.onSaveInstanceState(outState)
         Timber.d("onSaveInstanceState")
-        try {
-            val str = json.encodeToString(navigationManager.backStack.toList())
+        DestinationCodec.encode(navigationManager.backStack.toList())?.let { str ->
             outState.putString(KEY_BACK_STACK, str)
-        } catch (ex: Exception) {
-            // Best-effort: some destinations carry types we can't serialize; skip persisting
-            // the back stack rather than crashing in onSaveInstanceState.
-            Timber.w(ex, "Could not persist back stack; skipping")
         }
         outState.putBoolean(KEY_EXTERNAL_PLAYER, playerBackend == PlayerBackend.EXTERNAL_PLAYER)
     }
@@ -428,8 +419,24 @@ class MainActivityViewModel
         private val backdropService: BackdropService,
         private val appUpgradeHandler: AppUpgradeHandler,
         private val intentService: IntentService,
+        private val continuityService: ContinuityService,
     ) : ViewModel() {
         private val mutex = Mutex()
+
+        init {
+            // Every navigation writes the current place to disk, so a launch the system did not
+            // restore (Android TV reclaiming a backgrounded app) can still re-open it. The
+            // profile is read at write time rather than captured: switching profile must not
+            // keep filing pages under the previous one.
+            navigationManager.onBackStackChanged = { stack ->
+                continuityService.save(serverRepository.current.value?.user?.id?.toString(), stack)
+            }
+        }
+
+        override fun onCleared() {
+            super.onCleared()
+            navigationManager.onBackStackChanged = null
+        }
 
         fun appStart(intent: Intent?) {
             viewModelScope.launchDefault {
@@ -562,6 +569,7 @@ class MainActivityViewModel
             if (signInAutomatically && currentUser != null && !currentUser.user.isProtected) {
                 // Hot reload
                 Timber.v("Hot reload restoring state")
+                restoreLastScreen(currentUser.user)
                 setupNavigationManager.navigateTo(
                     SetupDestination.AppContent(currentUser),
                 )
@@ -574,8 +582,31 @@ class MainActivityViewModel
                         serverRepository.getMostRecentServer()
                     }
                 Timber.d("Restore last session result=%s", restoredSession)
+                if (restoredSession is RestoredSession.Success) {
+                    restoreLastScreen(restoredSession.currentUser.user)
+                }
                 setupNavigationManager.navigateTo(restoredSession.destination)
             }
+        }
+
+        /**
+         * Re-open the page the viewer was on when the app was last closed.
+         *
+         * Only a launch that begins on a single Home entry is a candidate. A configuration
+         * change, a restored instance state and a hot reload all already carry the pages the
+         * viewer was on, and must not be pushed backwards to a screen remembered from before.
+         */
+        private fun restoreLastScreen(user: JellyfinUser) {
+            val stack = navigationManager.backStack
+            if (stack.size != 1 || stack.firstOrNull() !is Destination.Home) return
+            val restored = continuityService.load(user.id.toString()) ?: return
+            // Re-opening Home is not continuity, it is a wasted navigation.
+            if (restored.lastOrNull() is Destination.Home) return
+            Timber.i("Restoring last screen: %s", restored.lastOrNull())
+            // Through the manager, not by assigning the stack: the chrome derives the lit
+            // destination from this change, and a silent swap left Home lit over the restored
+            // page.
+            navigationManager.replaceStack(restored)
         }
     }
 

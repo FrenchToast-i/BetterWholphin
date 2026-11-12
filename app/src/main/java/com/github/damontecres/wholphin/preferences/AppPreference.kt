@@ -567,6 +567,123 @@ sealed interface AppPreference<Pref, T> {
                 valueToIndex = { if (it != AppThemeColors.UNRECOGNIZED) it.number else 0 },
             )
 
+        val LiquidGlass =
+            AppSwitchPreference<AppPreferences>(
+                title = R.string.liquid_glass_mode,
+                defaultValue = false,
+                getter = { it.interfacePreferences.liquidGlass },
+                setter = { prefs, value ->
+                    prefs.updateInterfacePreferences { liquidGlass = value }
+                },
+                summary = R.string.liquid_glass_mode_summary,
+            )
+
+        /**
+         * Whether this profile takes part in Seerr discovery and requests.
+         *
+         * The stored value lives in [com.github.damontecres.wholphin.services.AccountPreferences]
+         * because a request identity belongs to a person, not to the television: one profile may
+         * keep its Discover door while another has it switched off. The switch is handled
+         * specially on the settings page; this entry exists so the row has a title, a summary and
+         * a place in the group.
+         */
+        val SeerrEnabled =
+            AppSwitchPreference<AppPreferences>(
+                title = R.string.seerr_enabled,
+                defaultValue = true,
+                getter = { true },
+                setter = { prefs, _ -> prefs },
+                summary = R.string.seerr_enabled_summary,
+            )
+
+        /**
+         * When the evening ends, for the Tonight page.
+         *
+         * The page's whole promise is "something you can finish", and finishing depends on the
+         * clock. A stored zero means "never set" rather than midnight, because a preference added
+         * after the fact must not silently become the most extreme option.
+         */
+        val Bedtime =
+            AppChoicePreference<AppPreferences, Int>(
+                title = R.string.bedtime,
+                defaultValue = DEFAULT_BEDTIME_MINUTES,
+                getter = { it.interfacePreferences.bedtimeMinutes.takeIf { minutes -> minutes > 0 } ?: DEFAULT_BEDTIME_MINUTES },
+                setter = { prefs, value ->
+                    prefs.updateInterfacePreferences { bedtimeMinutes = value }
+                },
+                displayValues = R.array.bedtimes,
+                indexToValue = { index -> BEDTIME_OPTIONS[index.coerceIn(BEDTIME_OPTIONS.indices)] },
+                valueToIndex = { value -> BEDTIME_OPTIONS.indexOf(value).takeIf { it >= 0 } ?: BEDTIME_OPTIONS.indexOf(DEFAULT_BEDTIME_MINUTES) },
+                summary = R.string.bedtime_summary,
+            )
+
+        /**
+         * A control on the glass top bar, expressed as "visible" in the UI while stored as the
+         * matching `hide_*` flag so that an unstored preference still shows the control.
+         */
+        private fun topBarToggle(
+            title: Int,
+            hidden: (TopBarPreferences) -> Boolean,
+            setHidden: TopBarPreferences.Builder.(Boolean) -> Unit,
+        ) = AppSwitchPreference<AppPreferences>(
+            title = title,
+            defaultValue = true,
+            getter = { !hidden(it.interfacePreferences.topBarPreferences) },
+            setter = { prefs, value ->
+                prefs.updateInterfacePreferences {
+                    topBarPreferences =
+                        topBarPreferences
+                            .toBuilder()
+                            .apply { setHidden(!value) }
+                            .build()
+                }
+            },
+            summaryOn = R.string.enabled,
+            summaryOff = R.string.disabled,
+        )
+
+        val TopBarHome =
+            topBarToggle(
+                R.string.top_bar_home,
+                { it.hideHome },
+                { hideHome = it },
+            )
+
+        val TopBarNowPlaying =
+            topBarToggle(
+                R.string.top_bar_now_playing,
+                { it.hideNowPlaying },
+                { hideNowPlaying = it },
+            )
+
+        val TopBarSearch =
+            topBarToggle(
+                R.string.top_bar_search,
+                { it.hideSearch },
+                { hideSearch = it },
+            )
+
+        val TopBarSettings =
+            topBarToggle(
+                R.string.top_bar_settings,
+                { it.hideSettings },
+                { hideSettings = it },
+            )
+
+        val TopBarProfile =
+            topBarToggle(
+                R.string.top_bar_profile,
+                { it.hideProfile },
+                { hideProfile = it },
+            )
+
+        val TopBarPlaySomething =
+            topBarToggle(
+                R.string.top_bar_play_something,
+                { it.hideShuffle },
+                { hideShuffle = it },
+            )
+
         val ShowLogos =
             AppSwitchPreference<AppPreferences>(
                 title = R.string.prefer_logos,
@@ -627,7 +744,11 @@ sealed interface AppPreference<Pref, T> {
         val UpdateUrl =
             AppStringPreference<AppPreferences>(
                 title = R.string.update_url,
-                defaultValue = "https://api.github.com/repos/damontecres/Wholphin/releases/latest",
+                // This build is published from the fork, not from upstream: pointing the default
+                // at damontecres/Wholphin would offer every viewer an "update" that replaces
+                // their install with somebody else's build. The key is editable, so a viewer who
+                // wants upstream releases can still paste that URL in.
+                defaultValue = "https://api.github.com/repos/FrenchToast-i/BetterWholphin/releases/latest",
                 getter = { it.updateUrl },
                 setter = { prefs, value ->
                     prefs.update { updateUrl = value }
@@ -1111,6 +1232,27 @@ sealed interface AppPreference<Pref, T> {
                 setter = { prefs, _ -> prefs },
             )
 
+        /**
+         * The optional TMDB key that powers the trending shelf.
+         *
+         * A plain string preference, like the external player command: this is local
+         * configuration rather than an account, and it never leaves the device except as a
+         * request to TMDB. The summary is a fixed description, so the key itself is never
+         * echoed back onto the settings screen.
+         */
+        val TmdbApiKey =
+            AppStringPreference<AppPreferences>(
+                title = R.string.tmdb_api_key,
+                defaultValue = "",
+                getter = { it.interfacePreferences.tmdbApiKey },
+                setter = { prefs, value ->
+                    prefs.updateInterfacePreferences {
+                        tmdbApiKey = value.trim()
+                    }
+                },
+                summary = R.string.tmdb_api_key_summary,
+            )
+
         val QuickConnect =
             AppClickablePreference<AppPreferences>(
                 title = R.string.quick_connect,
@@ -1164,6 +1306,16 @@ sealed interface AppPreference<Pref, T> {
                 title = R.string.screensaver_settings,
                 destination = Destination.Settings(PreferenceScreenOption.SCREENSAVER),
             )
+
+        /** 23:30 — an ordinary weeknight, and late enough to be the end of an evening. */
+        const val DEFAULT_BEDTIME_MINUTES = 1410
+
+        /**
+         * 21:00 through 01:00 in half hours. Values past 1440 are after midnight, which keeps the
+         * window arithmetic simple: it is still "tonight" until 01:00.
+         */
+        val BEDTIME_OPTIONS =
+            listOf(1260, 1290, 1320, 1350, 1380, 1410, 1440, 1470, 1500)
     }
 }
 
@@ -1178,7 +1330,24 @@ val basicPreferences =
                     AppPreference.PlayThemeMusic,
                     AppPreference.SubtitleStyle,
                     AppPreference.ThemeColors,
+                    AppPreference.LiquidGlass,
+                    AppPreference.Bedtime,
                     AppPreference.ScreensaverSettings,
+                ),
+            conditionalPreferences =
+                listOf(
+                    ConditionalPreferences(
+                        condition = { it.interfacePreferences.liquidGlass },
+                        preferences =
+                            listOf(
+                                AppPreference.TopBarHome,
+                                AppPreference.TopBarNowPlaying,
+                                AppPreference.TopBarSearch,
+                                AppPreference.TopBarPlaySomething,
+                                AppPreference.TopBarSettings,
+                                AppPreference.TopBarProfile,
+                            ),
+                    ),
                 ),
         ),
         PreferenceGroup(
@@ -1222,14 +1391,22 @@ val basicPreferences =
                 },
         ),
         PreferenceGroup(
-            title = R.string.more,
+            title = R.string.discovery,
             preferences =
                 buildList {
                     if (BuildConfig.DISCOVER_ENABLED) {
+                        add(AppPreference.SeerrEnabled)
                         add(AppPreference.SeerrIntegration)
                     }
-                    add(AppPreference.AdvancedSettings)
+                    add(AppPreference.TmdbApiKey)
                 },
+        ),
+        PreferenceGroup(
+            title = R.string.more,
+            preferences =
+                listOf(
+                    AppPreference.AdvancedSettings,
+                ),
         ),
     )
 

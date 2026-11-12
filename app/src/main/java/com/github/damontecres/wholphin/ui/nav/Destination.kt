@@ -40,6 +40,15 @@ sealed class Destination(
         val id: Long = 0L,
     ) : Destination()
 
+    /**
+     * The nightly plan: one title that fits the time left before bed, plus the shelves behind it.
+     *
+     * A destination rather than a dialog, because deciding what to watch is a page-sized question
+     * and the answer deserves the artwork.
+     */
+    @Serializable
+    data object Tonight : Destination()
+
     @Serializable
     data object HomeSettings : Destination(true)
 

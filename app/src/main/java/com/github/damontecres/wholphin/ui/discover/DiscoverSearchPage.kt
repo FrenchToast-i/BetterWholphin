@@ -1,18 +1,8 @@
 package com.github.damontecres.wholphin.ui.discover
 
-import androidx.activity.compose.BackHandler
-import androidx.compose.animation.AnimatedVisibility
-import androidx.compose.animation.expandHorizontally
-import androidx.compose.animation.fadeIn
-import androidx.compose.animation.fadeOut
-import androidx.compose.animation.shrinkHorizontally
-import androidx.compose.foundation.focusGroup
 import androidx.compose.foundation.layout.Arrangement
-import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
-import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.fillMaxSize
-import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.padding
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
@@ -22,20 +12,8 @@ import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.runtime.setValue
-import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
-import androidx.compose.ui.focus.FocusDirection
 import androidx.compose.ui.focus.FocusRequester
-import androidx.compose.ui.focus.focusRequester
-import androidx.compose.ui.focus.focusRestorer
-import androidx.compose.ui.focus.onFocusChanged
-import androidx.compose.ui.input.key.Key
-import androidx.compose.ui.input.key.KeyEventType
-import androidx.compose.ui.input.key.key
-import androidx.compose.ui.input.key.onPreviewKeyEvent
-import androidx.compose.ui.input.key.type
-import androidx.compose.ui.platform.LocalFocusManager
-import androidx.compose.ui.platform.LocalSoftwareKeyboardController
 import androidx.compose.ui.unit.dp
 import androidx.hilt.lifecycle.viewmodel.compose.hiltViewModel
 import androidx.lifecycle.ViewModel
@@ -43,17 +21,18 @@ import androidx.lifecycle.viewModelScope
 import com.github.damontecres.wholphin.data.model.DiscoverItem
 import com.github.damontecres.wholphin.data.model.SeerrItemType
 import com.github.damontecres.wholphin.preferences.UserPreferences
+import com.github.damontecres.wholphin.services.BackdropService
 import com.github.damontecres.wholphin.services.NavigationManager
 import com.github.damontecres.wholphin.services.SeerrService
 import com.github.damontecres.wholphin.services.UserPreferencesService
-import com.github.damontecres.wholphin.ui.components.SearchEditTextBox
 import com.github.damontecres.wholphin.ui.components.VoiceInputManager
-import com.github.damontecres.wholphin.ui.components.VoiceSearchButton
 import com.github.damontecres.wholphin.ui.launchIO
 import com.github.damontecres.wholphin.ui.nav.Destination
 import com.github.damontecres.wholphin.ui.rememberInt
 import com.github.damontecres.wholphin.ui.search.SearchCombinedResults
+import com.github.damontecres.wholphin.ui.search.SearchFieldRow
 import com.github.damontecres.wholphin.ui.search.SearchResult
+import com.github.damontecres.wholphin.ui.theme.LocalLiquidGlass
 import com.github.damontecres.wholphin.ui.tryRequestFocus
 import dagger.hilt.android.lifecycle.HiltViewModel
 import kotlinx.coroutines.CancellationException
@@ -71,6 +50,7 @@ class DiscoverSearchViewModel
         private val seerrService: SeerrService,
         val voiceInputManager: VoiceInputManager,
         val userPreferencesService: UserPreferencesService,
+        private val backdropService: BackdropService,
     ) : ViewModel() {
         val seerrResults = MutableStateFlow<SearchResult>(SearchResult.NoQuery)
 
@@ -105,6 +85,15 @@ class DiscoverSearchViewModel
                 }
             }
         }
+
+        /**
+         * A discovered title has no Jellyfin item, so the page's own backdrop follows the focused
+         * poster instead. Without it the shell kept the previous screen's artwork behind a page
+         * that is entirely about other titles.
+         */
+        fun updateBackdrop(item: DiscoverItem) {
+            viewModelScope.launchIO { backdropService.submit(item) }
+        }
     }
 
 @Composable
@@ -114,8 +103,7 @@ fun DiscoverSearchPage(
     modifier: Modifier = Modifier,
     viewModel: DiscoverSearchViewModel = hiltViewModel(),
 ) {
-    val focusManager = LocalFocusManager.current
-    val keyboardController = LocalSoftwareKeyboardController.current
+    val glass = LocalLiquidGlass.current
     val seerrResults by viewModel.seerrResults.collectAsState()
     var immediateSearchQuery by rememberSaveable { mutableStateOf<String?>(null) }
     var query by rememberSaveable { mutableStateOf(viewModel.currentQuery) }
@@ -171,80 +159,21 @@ fun DiscoverSearchPage(
         modifier = modifier.fillMaxSize(),
         verticalArrangement = Arrangement.spacedBy(0.dp),
     ) {
-        Box(
-            contentAlignment = Alignment.Center,
-            modifier = Modifier.fillMaxWidth(),
-        ) {
-            var isSearchActive by remember { mutableStateOf(false) }
-            var isTextFieldFocused by remember { mutableStateOf(false) }
-
-            BackHandler(isTextFieldFocused) {
-                when {
-                    isSearchActive -> {
-                        isSearchActive = false
-                        keyboardController?.hide()
-                    }
-
-                    else -> {
-                        focusManager.moveFocus(FocusDirection.Next)
-                    }
-                }
-            }
-
-            Row(
-                horizontalArrangement = Arrangement.spacedBy(0.dp),
-                verticalAlignment = Alignment.CenterVertically,
-                modifier =
-                    Modifier
-                        .padding(start = 16.dp, end = 16.dp)
-                        .focusGroup()
-                        .focusRestorer()
-                        .focusRequester(textFieldFocusRequester),
-            ) {
-                AnimatedVisibility(
-                    visible = prefs.showVoiceSearchButton,
-                    enter = fadeIn() + expandHorizontally(expandFrom = Alignment.End),
-                    exit = fadeOut() + shrinkHorizontally(shrinkTowards = Alignment.End),
-                ) {
-                    VoiceSearchButton(
-                        onSpeechResult = { spokenText ->
-                            query = spokenText
-                            triggerImmediateSearch(spokenText)
-                        },
-                        voiceInputManager = viewModel.voiceInputManager,
-                        modifier = Modifier.padding(end = 12.dp),
-                    )
-                }
-
-                SearchEditTextBox(
-                    value = query,
-                    onValueChange = {
-                        isSearchActive = true
-                        query = it
-                    },
-                    onSearchClick = { triggerImmediateSearch(query) },
-                    readOnly = !isSearchActive,
-                    modifier =
-                        Modifier
-                            .onFocusChanged { state ->
-                                isTextFieldFocused = state.isFocused
-                                if (!state.isFocused) isSearchActive = false
-                            }.onPreviewKeyEvent { event ->
-                                val isActivationKey =
-                                    event.key in listOf(Key.DirectionCenter, Key.Enter)
-                                if (event.type == KeyEventType.KeyUp && isActivationKey && !isSearchActive) {
-                                    isSearchActive = true
-                                    keyboardController?.show()
-                                    true
-                                } else {
-                                    false
-                                }
-                            },
-                )
-            }
-        }
+        SearchFieldRow(
+            query = query,
+            onQueryChange = { query = it },
+            onSearch = { triggerImmediateSearch(query) },
+            voiceInputManager = viewModel.voiceInputManager,
+            focusRequester = textFieldFocusRequester,
+            glass = glass,
+            showVoiceSearch = prefs.showVoiceSearchButton,
+            // Classic mode keeps the page's own 16dp inset; glass mode is inset by the shell,
+            // like every other page, so the field lines up with the rows under it.
+            modifier = Modifier.padding(start = if (glass) 0.dp else 16.dp, end = if (glass) 0.dp else 16.dp),
+        )
         SearchCombinedResults(
             result = seerrResults,
+            query = query,
             focusRequester = gridFocusRequester,
             onClickItem = { _, _ -> },
             onLongClickItem = { _, _ -> },
@@ -255,6 +184,7 @@ fun DiscoverSearchPage(
                 position = index
                 positionCallback.invoke(columns, index)
             },
+            onFocusDiscoverItem = { viewModel.updateBackdrop(it) },
             modifier = Modifier.fillMaxSize(),
         )
     }

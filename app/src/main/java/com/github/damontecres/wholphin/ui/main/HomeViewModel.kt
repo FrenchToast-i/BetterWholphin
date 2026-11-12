@@ -27,7 +27,6 @@ import com.github.damontecres.wholphin.ui.data.RowColumn
 import com.github.damontecres.wholphin.ui.launchDefault
 import com.github.damontecres.wholphin.ui.launchIO
 import com.github.damontecres.wholphin.ui.showToast
-import com.github.damontecres.wholphin.ui.util.EmptyStringProvider
 import com.github.damontecres.wholphin.util.ExceptionHandler
 import com.github.damontecres.wholphin.util.HomeRowLoadingState
 import com.github.damontecres.wholphin.util.LoadingState
@@ -37,7 +36,6 @@ import dagger.hilt.android.qualifiers.ApplicationContext
 import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.Job
 import kotlinx.coroutines.async
-import kotlinx.coroutines.awaitAll
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.first
@@ -165,15 +163,23 @@ class HomeViewModel
                 )
                 _state.update {
                     it.copy(
-                        loadingState = if (refresh) LoadingState.Success else LoadingState.Loading,
+                        // The page is whole as soon as its rows exist, even as placeholders. It
+                        // used to wait for every shelf before drawing anything, so a cold start
+                        // that included a slow live-TV query (or a TMDB rail) held the entire
+                        // home screen behind a spinner for the better part of a minute. Each row
+                        // now draws its own heading and fills in as its query returns; the rows
+                        // are independent requests, and the page is not the sum of them.
+                        loadingState = LoadingState.Success,
                         refreshState = LoadingState.Loading,
                         settings = settings,
                         homeRows =
                             if (refresh) {
                                 it.homeRows
                             } else {
-                                List(settings.rows.size) {
-                                    HomeRowLoadingState.Pending(EmptyStringProvider)
+                                // The real headings, so the placeholders read as shelves that are
+                                // filling in rather than as a list of anonymous bars.
+                                settings.rows.map {
+                                    HomeRowLoadingState.Pending(it.title)
                                 }
                             },
                     )
@@ -227,46 +233,34 @@ class HomeViewModel
                             }
                         }
 
-                if (refresh) {
-                    // Replace rows as they complete
-                    val remaining = deferred.withIndex().toMutableList()
-                    while (remaining.isNotEmpty()) {
-                        val (rowIndex, rowData) =
-                            select {
-                                // "Return" the first remaining that is completed
-                                remaining
-                                    .forEach { (rowIndex, deferred) ->
-                                        deferred.onAwait { rowIndex to it }
-                                    }
-                            }
-                        Timber.v("Got row data index=%s", rowIndex)
-                        remaining.removeIf { it.index == rowIndex }
-                        _state.update { state ->
-                            val newRows =
-                                state.homeRows.toMutableList().apply {
-                                    set(rowIndex, rowData)
+                // Replace rows as they complete, on a first load as well as on a refresh.
+                val remaining = deferred.withIndex().toMutableList()
+                while (remaining.isNotEmpty()) {
+                    val (rowIndex, rowData) =
+                        select {
+                            // "Return" the first remaining that is completed
+                            remaining
+                                .forEach { (rowIndex, deferred) ->
+                                    deferred.onAwait { rowIndex to it }
                                 }
-                            state.copy(
-                                homeRows = newRows,
-                            )
                         }
-                    }
-                    _state.update {
-                        it.copy(
-                            loadingState = LoadingState.Success,
-                            refreshState = LoadingState.Success,
+                    Timber.v("Got row data index=%s", rowIndex)
+                    remaining.removeIf { it.index == rowIndex }
+                    _state.update { state ->
+                        val newRows =
+                            state.homeRows.toMutableList().apply {
+                                set(rowIndex, rowData)
+                            }
+                        state.copy(
+                            homeRows = newRows,
                         )
                     }
-                } else {
-                    val rows = deferred.awaitAll()
-                    Timber.v("Got all rows")
-                    _state.update {
-                        it.copy(
-                            loadingState = LoadingState.Success,
-                            refreshState = LoadingState.Success,
-                            homeRows = rows,
-                        )
-                    }
+                }
+                _state.update {
+                    it.copy(
+                        loadingState = LoadingState.Success,
+                        refreshState = LoadingState.Success,
+                    )
                 }
                 Timber.d("Home page load complete")
             } catch (ex: CancellationException) {

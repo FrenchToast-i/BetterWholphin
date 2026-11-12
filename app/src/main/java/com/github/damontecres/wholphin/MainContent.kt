@@ -35,6 +35,12 @@ import com.github.damontecres.wholphin.services.ScreensaverService
 import com.github.damontecres.wholphin.services.SetupDestination
 import com.github.damontecres.wholphin.ui.components.AppScreensaver
 import com.github.damontecres.wholphin.ui.nav.ApplicationContent
+import com.github.damontecres.wholphin.ui.nav.LocalUserPreferences
+import com.github.damontecres.wholphin.ui.theme.GlassAmbientBackground
+import com.github.damontecres.wholphin.ui.theme.LocalGlassBackdrop
+import com.github.damontecres.wholphin.ui.theme.LocalLiquidGlass
+import com.kashif_e.backdrop.backdrops.layerBackdrop
+import com.kashif_e.backdrop.backdrops.rememberLayerBackdrop
 import com.github.damontecres.wholphin.ui.setup.SwitchServerContent
 import com.github.damontecres.wholphin.ui.setup.SwitchUserContent
 import com.github.damontecres.wholphin.ui.util.InterfaceCustomization
@@ -60,7 +66,30 @@ fun MainContent(
 //                            setupNavigationManager.backStack = backStack
         val interfaceCustomization =
             remember(userPreferences.appPreferences) { InterfaceCustomization(userPreferences.appPreferences) }
-        CompositionLocalProvider(LocalInterfaceCustomization provides interfaceCustomization) {
+        val liquidGlass = userPreferences.liquidGlass
+        // Setup has no artwork, so glass mode supplies a palette field instead of black; the
+        // panes on the server and user pickers refract that. The main shell later replaces this
+        // with the real backdrop.
+        val setupBackdrop = if (liquidGlass) rememberLayerBackdrop() else null
+        CompositionLocalProvider(
+            LocalInterfaceCustomization provides interfaceCustomization,
+            // Provided above the host so pages and the navigation bar can read preferences that
+            // change while they are on screen.
+            LocalUserPreferences provides preferences,
+            LocalLiquidGlass provides liquidGlass,
+            LocalGlassBackdrop provides setupBackdrop,
+        ) {
+            Box(Modifier.fillMaxSize()) {
+                if (setupBackdrop != null) {
+                    Box(
+                        modifier =
+                            Modifier
+                                .fillMaxSize()
+                                .layerBackdrop(setupBackdrop),
+                    ) {
+                        GlassAmbientBackground()
+                    }
+                }
             NavDisplay(
                 backStack = backStack,
                 onBack = { backStack.removeLastOrNull() },
@@ -115,7 +144,6 @@ fun MainContent(
                                         user = current.user,
                                         server = current.server,
                                         navigationManager = navigationManager,
-                                        preferences = preferences,
                                         modifier = Modifier.fillMaxSize(),
                                     )
                                 } else {
@@ -158,6 +186,7 @@ fun MainContent(
                         .fillMaxSize()
                         .background(Color.Black.copy(alpha = alpha)),
                 )
+            }
             }
         }
     }

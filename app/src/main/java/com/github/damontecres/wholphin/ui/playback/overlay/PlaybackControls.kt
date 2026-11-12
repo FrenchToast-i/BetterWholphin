@@ -33,6 +33,7 @@ import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableFloatStateOf
 import androidx.compose.runtime.mutableLongStateOf
+import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.setValue
@@ -64,15 +65,19 @@ import androidx.tv.material3.ListItem
 import androidx.tv.material3.LocalContentColor
 import androidx.tv.material3.MaterialTheme
 import androidx.tv.material3.Text
-import androidx.tv.material3.surfaceColorAtElevation
 import com.github.damontecres.wholphin.R
 import com.github.damontecres.wholphin.preferences.AppThemeColors
+import com.github.damontecres.wholphin.services.SleepTimerPlan
 import com.github.damontecres.wholphin.ui.AppColors
 import com.github.damontecres.wholphin.ui.FontAwesome
 import com.github.damontecres.wholphin.ui.PreviewTvSpec
 import com.github.damontecres.wholphin.ui.components.Button
 import com.github.damontecres.wholphin.ui.components.SelectedLeadingContent
 import com.github.damontecres.wholphin.ui.components.TextButton
+import com.github.damontecres.wholphin.ui.components.glassDialogSurface
+import com.github.damontecres.wholphin.ui.components.glassMenuRowColors
+import com.github.damontecres.wholphin.ui.components.glassMenuRowGlow
+import com.github.damontecres.wholphin.ui.components.glassMenuRowShape
 import com.github.damontecres.wholphin.ui.formatDuration
 import com.github.damontecres.wholphin.ui.indexOfFirstOrNull
 import com.github.damontecres.wholphin.ui.playback.ControllerViewState
@@ -80,8 +85,11 @@ import com.github.damontecres.wholphin.ui.playback.PlaybackDialogType
 import com.github.damontecres.wholphin.ui.seekBack
 import com.github.damontecres.wholphin.ui.seekForward
 import com.github.damontecres.wholphin.ui.skipStringRes
+import com.github.damontecres.wholphin.ui.theme.GlassTokens
+import com.github.damontecres.wholphin.ui.theme.LocalLiquidGlass
 import com.github.damontecres.wholphin.ui.theme.LocalTheme
 import com.github.damontecres.wholphin.ui.theme.WholphinTheme
+import com.github.damontecres.wholphin.ui.theme.glassPlayerDeck
 import com.github.damontecres.wholphin.ui.tryRequestFocus
 import com.github.damontecres.wholphin.util.ExceptionHandler
 import kotlinx.coroutines.delay
@@ -90,6 +98,7 @@ import kotlinx.coroutines.launch
 import org.jellyfin.sdk.model.api.MediaSegmentDto
 import org.jellyfin.sdk.model.extensions.ticks
 import kotlin.time.Duration
+import kotlin.time.Duration.Companion.minutes
 import kotlin.time.Duration.Companion.seconds
 
 /**
@@ -150,6 +159,8 @@ fun PlaybackControls(
     seekForward: Duration,
     currentSegment: MediaSegmentDto?,
     modifier: Modifier = Modifier,
+    sleepTimerRemainingSeconds: Int? = null,
+    onSleepTimerClick: () -> Unit = {},
     initialFocusRequester: FocusRequester = remember { FocusRequester() },
     seekBarInteractionSource: MutableInteractionSource = remember { MutableInteractionSource() },
 ) {
@@ -167,8 +178,22 @@ fun PlaybackControls(
             initialFocusRequester.tryRequestFocus()
         }
     }
+    val glass = LocalLiquidGlass.current
     Column(
-        modifier = modifier.bringIntoViewRequester(bringIntoViewRequester),
+        modifier =
+            modifier
+                .then(
+                    if (glass) {
+                        // The deck floats clear of the screen edges so the picture keeps its frame,
+                        // and the transport sits on the material instead of on the scrim alone.
+                        Modifier
+                            .padding(horizontal = 24.dp, vertical = 4.dp)
+                            .glassPlayerDeck()
+                            .padding(horizontal = 18.dp, vertical = 12.dp)
+                    } else {
+                        Modifier
+                    },
+                ).bringIntoViewRequester(bringIntoViewRequester),
         horizontalAlignment = Alignment.CenterHorizontally,
         verticalArrangement = Arrangement.spacedBy(0.dp),
     ) {
@@ -181,6 +206,7 @@ fun PlaybackControls(
             intervals = seekBarIntervals,
             seekBack = seekBack,
             seekForward = seekForward,
+            sleepTimerRemainingSeconds = sleepTimerRemainingSeconds,
             modifier =
                 Modifier
                     .padding(vertical = 0.dp)
@@ -230,6 +256,11 @@ fun PlaybackControls(
                 RightPlaybackButtons(
                     onControllerInteraction = onControllerInteraction,
                     onClickPlaybackDialogType = onClickPlaybackDialogType,
+                    sleepTimerActive = sleepTimerRemainingSeconds != null,
+                    onSleepTimerClick = {
+                        onControllerInteraction()
+                        onSleepTimerClick()
+                    },
                     modifier = Modifier,
                 )
             }
@@ -248,6 +279,7 @@ fun SeekBar(
     seekBack: Duration,
     seekForward: Duration,
     modifier: Modifier = Modifier,
+    sleepTimerRemainingSeconds: Int? = null,
     interactionSource: MutableInteractionSource = remember { MutableInteractionSource() },
 ) {
     var bufferedProgress by remember(player) { mutableFloatStateOf(player.bufferedPosition.toFloat() / player.duration) }
@@ -283,6 +315,7 @@ fun SeekBar(
         SeekTimecodes(
             positionMs = position,
             durationMs = player.duration,
+            sleepTimerRemainingSeconds = sleepTimerRemainingSeconds,
             modifier = Modifier.fillMaxWidth(),
         )
     }
@@ -293,6 +326,7 @@ fun SeekTimecodes(
     positionMs: Long,
     durationMs: Long,
     modifier: Modifier = Modifier,
+    sleepTimerRemainingSeconds: Int? = null,
 ) {
     val currentLayoutDirection = LocalLayoutDirection.current
     CompositionLocalProvider(LocalLayoutDirection provides LayoutDirection.Ltr) {
@@ -316,6 +350,25 @@ fun SeekTimecodes(
                         Modifier
                             .padding(8.dp),
                 )
+            }
+            // The countdown sits between the two timecodes rather than beside the transport:
+            // the row already has the whole width, and a fourth control on the right would have
+            // pushed the seek bar's own labels out of the deck.
+            sleepTimerRemainingSeconds?.let { remainingSeconds ->
+                CompositionLocalProvider(LocalLayoutDirection provides currentLayoutDirection) {
+                    Text(
+                        text =
+                            stringResource(
+                                R.string.sleep_timer_remaining,
+                                resources.formatDuration(SleepTimerPlan.remainingMinutes(remainingSeconds).minutes),
+                            ),
+                        color = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.72f),
+                        style = MaterialTheme.typography.labelLarge,
+                        modifier =
+                            Modifier
+                                .padding(8.dp),
+                    )
+                }
             }
             CompositionLocalProvider(LocalLayoutDirection provides currentLayoutDirection) {
                 Text(
@@ -361,6 +414,8 @@ fun RightPlaybackButtons(
     onControllerInteraction: () -> Unit,
     onClickPlaybackDialogType: (PlaybackDialogType) -> Unit,
     modifier: Modifier = Modifier,
+    sleepTimerActive: Boolean = false,
+    onSleepTimerClick: (() -> Unit)? = null,
 ) {
     Row(
         modifier = modifier.focusGroup(),
@@ -388,6 +443,21 @@ fun RightPlaybackButtons(
             onControllerInteraction = onControllerInteraction,
             modifier = Modifier,
         )
+        onSleepTimerClick?.let { onClick ->
+            // At the end of the deck because it is the least-used key, and lit while it runs so
+            // the overlay explains the volume drop the fade causes at the end of the countdown.
+            PlaybackFaButton(
+                enabled = true,
+                iconRes = R.string.fa_clock,
+                onClick = {
+                    onControllerInteraction.invoke()
+                    onClick()
+                },
+                onControllerInteraction = onControllerInteraction,
+                textColor = if (sleepTimerActive) MaterialTheme.colorScheme.border else Color.Unspecified,
+                modifier = Modifier,
+            )
+        }
     }
 }
 
@@ -475,6 +545,8 @@ fun PlaybackButton(
     interactionSource: MutableInteractionSource? = null,
 ) {
     val selectedColor = MaterialTheme.colorScheme.border
+    val glass = LocalLiquidGlass.current
+    var focused by remember { mutableStateOf(false) }
     Button(
         enabled = enabled,
         onClick = onClick,
@@ -489,17 +561,24 @@ fun PlaybackButton(
         modifier =
             modifier
                 .size(36.dp, 36.dp)
-                .onFocusChanged { onControllerInteraction.invoke() },
+                .onFocusChanged {
+                    focused = it.isFocused
+                    onControllerInteraction.invoke()
+                },
     ) {
         Icon(
             modifier = Modifier.fillMaxSize(),
             painter = painterResource(iconRes),
             contentDescription = "",
+            // The glass scheme's `border` (the focused fill) and `onSurface` (the glyph) are
+            // both white, so the transport's focused key — the one control the viewer lands on
+            // when the overlay opens — drew a white play triangle on a white disc. Focus is a
+            // white fill with a dark glyph, the same signal as a selected bar pill.
             tint =
-                if (LocalTheme.current == AppThemeColors.OLED_BLACK) {
-                    LocalContentColor.current
-                } else {
-                    MaterialTheme.colorScheme.onSurface
+                when {
+                    glass && focused -> Color.Black
+                    LocalTheme.current == AppThemeColors.OLED_BLACK -> LocalContentColor.current
+                    else -> MaterialTheme.colorScheme.onSurface
                 },
         )
     }
@@ -516,6 +595,8 @@ fun PlaybackFaButton(
     textColor: Color = Color.Unspecified,
 ) {
     val selectedColor = MaterialTheme.colorScheme.border
+    val glass = LocalLiquidGlass.current
+    var focused by remember { mutableStateOf(false) }
     Button(
         enabled = enabled,
         onClick = onClick,
@@ -530,7 +611,10 @@ fun PlaybackFaButton(
         modifier =
             modifier
                 .size(36.dp, 36.dp)
-                .onFocusChanged { onControllerInteraction.invoke() },
+                .onFocusChanged {
+                    focused = it.isFocused
+                    onControllerInteraction.invoke()
+                },
     ) {
         Text(
             text = stringResource(iconRes),
@@ -538,12 +622,12 @@ fun PlaybackFaButton(
             fontFamily = FontAwesome,
             textAlign = TextAlign.Center,
             color =
-                if (textColor.isSpecified) {
-                    textColor
-                } else if (LocalTheme.current == AppThemeColors.OLED_BLACK) {
-                    LocalContentColor.current
-                } else {
-                    MaterialTheme.colorScheme.onSurface
+                when {
+                    textColor.isSpecified -> textColor
+                    // White glyph on the white focus fill: same fix as the transport keys.
+                    glass && focused -> Color.Black
+                    LocalTheme.current == AppThemeColors.OLED_BLACK -> LocalContentColor.current
+                    else -> MaterialTheme.colorScheme.onSurface
                 },
             modifier =
                 Modifier
@@ -565,6 +649,7 @@ fun <T> BottomDialog(
     onSelectChoice: (Int, BottomDialogItem<T>) -> Unit,
     gravity: Int,
     currentChoice: BottomDialogItem<T>? = null,
+    header: String? = null,
 ) {
     val initialIndex =
         remember(choices, currentChoice) { choices.indexOfFirstOrNull { it == currentChoice } } ?: 0
@@ -592,14 +677,15 @@ fun <T> BottomDialog(
             window.setDimAmount(0f) // Remove dimmed background of ongoing playback
         }
 
+        val glass = LocalLiquidGlass.current
         Box(
             modifier =
                 Modifier
                     .wrapContentSize()
                     .padding(8.dp)
-                    .background(
-                        MaterialTheme.colorScheme.surfaceColorAtElevation(1.dp),
-                        shape = RoundedCornerShape(8.dp),
+                    .glassDialogSurface(
+                        shape = if (glass) GlassTokens.panelShape else RoundedCornerShape(8.dp),
+                        classicElevation = 1.dp,
                     ),
         ) {
             LazyColumn(
@@ -612,11 +698,32 @@ fun <T> BottomDialog(
                 verticalArrangement = Arrangement.Center,
                 horizontalAlignment = Alignment.CenterHorizontally,
             ) {
+                header?.let { title ->
+                    // A sheet of bare options with no title makes the viewer read the whole list to
+                    // learn what they are choosing; the timer is the one menu here whose rows do
+                    // not name themselves ("In 30m" of what?).
+                    item {
+                        Text(
+                            text = title,
+                            style = MaterialTheme.typography.titleMedium,
+                            color =
+                                if (LocalLiquidGlass.current) {
+                                    Color.White.copy(alpha = 0.72f)
+                                } else {
+                                    MaterialTheme.colorScheme.onSurface
+                                },
+                            modifier = Modifier.padding(horizontal = 16.dp, vertical = 10.dp),
+                        )
+                    }
+                }
                 itemsIndexed(choices) { index, choice ->
                     val interactionSource = remember { MutableInteractionSource() }
                     ListItem(
                         selected = choice == currentChoice,
                         enabled = choice.enabled,
+                        shape = glassMenuRowShape(),
+                        colors = glassMenuRowColors(),
+                        glow = glassMenuRowGlow(),
                         onClick = {
                             onDismissRequest()
                             onSelectChoice(index, choice)

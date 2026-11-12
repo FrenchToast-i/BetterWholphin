@@ -258,7 +258,7 @@ class LiveTvViewModel
                                 ProgramCategory.MOVIE
                             } else if (dto.isNews ?: false) {
                                 ProgramCategory.NEWS
-                            } else if (dto.isSports ?: false) {
+                            } else if (isSportsProgram(dto)) {
                                 ProgramCategory.SPORTS
                             } else {
                                 null
@@ -432,6 +432,19 @@ class LiveTvViewModel
                 )
             }
         }
+
+        /**
+         * Whether a programme is sport.
+         *
+         * Jellyfin fills `IsSports` for most providers, but an XMLTV tuner can carry the fact
+         * only as a category (`<category>sports</category>`, which Jellysports writes on every
+         * fixture). Reading both is what lets the Sports tab find the games without a provider
+         * specific service or a second request.
+         */
+        private fun isSportsProgram(dto: BaseItemDto): Boolean =
+            dto.isSports == true ||
+                dto.genres.orEmpty().any { it.trim().equals("sports", ignoreCase = true) } ||
+                dto.tags.orEmpty().any { it.trim().equals("sports", ignoreCase = true) }
 
         fun fetchProgramForDialog(programId: UUID) {
             _programDialogState.update { it.copy(loading = DataLoadingState.Loading) }

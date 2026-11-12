@@ -38,12 +38,16 @@ import com.github.damontecres.wholphin.ui.components.BasicDialog
 import com.github.damontecres.wholphin.ui.components.ConfirmDialog
 import com.github.damontecres.wholphin.ui.data.RowColumn
 import com.github.damontecres.wholphin.ui.detail.possibleFavoriteTypes
+import com.github.damontecres.wholphin.ui.ifElse
 import com.github.damontecres.wholphin.ui.launchIO
 import com.github.damontecres.wholphin.ui.main.HomePageContent
 import com.github.damontecres.wholphin.ui.main.settings.HomeSettingsDestination.ChooseRowType
 import com.github.damontecres.wholphin.ui.main.settings.HomeSettingsDestination.RowSettings
 import com.github.damontecres.wholphin.ui.rememberPosition
 import com.github.damontecres.wholphin.ui.search.SearchForDialog
+import com.github.damontecres.wholphin.ui.theme.GlassTokens
+import com.github.damontecres.wholphin.ui.theme.LocalLiquidGlass
+import com.github.damontecres.wholphin.ui.theme.glassSurface
 import com.github.damontecres.wholphin.util.ExceptionHandler
 import com.github.damontecres.wholphin.util.HomeRowLoadingState
 import kotlinx.coroutines.Job
@@ -98,12 +102,23 @@ fun HomeSettingsPage(
         horizontalArrangement = Arrangement.spacedBy(8.dp),
         modifier = modifier,
     ) {
+        val glass = LocalLiquidGlass.current
         Box(
             modifier =
                 Modifier
                     .width(settingsWidth)
                     .fillMaxHeight()
-                    .background(color = MaterialTheme.colorScheme.surface),
+                    // The home-row editor is a sheet over the home page, so on glass it is a pane
+                    // of the material; the opaque surface would hide the artwork the page is
+                    // built on.
+                    .ifElse(
+                        glass,
+                        Modifier.padding(vertical = 10.dp).glassSurface(
+                            shape = GlassTokens.panelShape,
+                            scrim = 0.4f,
+                        ),
+                        Modifier.background(color = MaterialTheme.colorScheme.surface),
+                    ),
         ) {
             NavDisplay(
                 backStack = backStack,
@@ -113,7 +128,12 @@ fun HomeSettingsPage(
                         rememberSaveableStateHolderNavEntryDecorator(),
                         rememberViewModelStoreNavEntryDecorator(),
                     ),
-                modifier = Modifier.background(MaterialTheme.colorScheme.surfaceColorAtElevation(1.dp)),
+                modifier =
+                    if (LocalLiquidGlass.current) {
+                        Modifier
+                    } else {
+                        Modifier.background(MaterialTheme.colorScheme.surfaceColorAtElevation(1.dp))
+                    },
                 entryProvider = { key ->
                     val dest = key as HomeSettingsDestination
                     NavEntry(dest, contentKey = key.toString()) {

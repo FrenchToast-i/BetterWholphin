@@ -16,7 +16,7 @@ import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.LazyListState
-import androidx.compose.foundation.lazy.itemsIndexed
+import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.lazy.rememberLazyListState
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.CompositionLocalProvider
@@ -45,6 +45,7 @@ import androidx.compose.ui.unit.DpSize
 import androidx.compose.ui.unit.dp
 import androidx.hilt.lifecycle.viewmodel.compose.hiltViewModel
 import androidx.lifecycle.compose.LifecycleStartEffect
+import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import androidx.tv.material3.MaterialTheme
 import androidx.tv.material3.Text
 import com.github.damontecres.wholphin.R
@@ -84,6 +85,8 @@ import com.github.damontecres.wholphin.ui.playback.isPlayKeyUp
 import com.github.damontecres.wholphin.ui.playback.playable
 import com.github.damontecres.wholphin.ui.playback.scale
 import com.github.damontecres.wholphin.ui.rememberPosition
+import com.github.damontecres.wholphin.ui.theme.GlassPanel
+import com.github.damontecres.wholphin.ui.theme.LocalLiquidGlass
 import com.github.damontecres.wholphin.ui.tryRequestFocus
 import com.github.damontecres.wholphin.ui.util.ScrollToTopBringIntoViewSpec
 import com.github.damontecres.wholphin.util.HomeRowLoadingState
@@ -101,13 +104,29 @@ fun HomePage(
     modifier: Modifier = Modifier,
     viewModel: HomeViewModel = hiltViewModel(),
     playlistViewModel: AddPlaylistViewModel = hiltViewModel(),
+    tmdbHomeViewModel: TmdbHomeViewModel = hiltViewModel(),
+    tmdbTopTenViewModel: TmdbTopTenViewModel = hiltViewModel(),
+    seerrRequestsViewModel: SeerrRequestsViewModel = hiltViewModel(),
+    forYouViewModel: ForYouViewModel = hiltViewModel(),
 ) {
     val context = LocalContext.current
     LifecycleStartEffect(Unit) {
         viewModel.init()
+        // Both rails re-seed every time Home returns to the front: after an episode they should
+        // follow that show, not the one that was running when the app started.
+        forYouViewModel.refresh()
+        tmdbHomeViewModel.refresh()
+        tmdbTopTenViewModel.refresh()
+        // A profile with Seerr switched off has no request identity to show, so the rail stays
+        // away entirely rather than reporting that the household's server is unreachable.
+        if (preferences.seerrEnabled) seerrRequestsViewModel.refresh()
         onStopOrDispose { }
     }
     val state by viewModel.state.collectAsState()
+    val tmdbHome by tmdbHomeViewModel.state.collectAsStateWithLifecycle()
+    val tmdbTopTen by tmdbTopTenViewModel.state.collectAsStateWithLifecycle()
+    val seerrRequests by seerrRequestsViewModel.state.collectAsStateWithLifecycle()
+    val forYou by forYouViewModel.state.collectAsStateWithLifecycle()
     val loading = state.loadingState
     val refreshing = state.refreshState
     val homeRows = state.homeRows
@@ -213,6 +232,25 @@ fun HomePage(
                     }
                 }
 
+            val showLogo = preferences.appPreferences.interfacePreferences.showLogos
+            // Everything already drawn in a row above the shelves. For You is not allowed to
+            // repeat a poster from the watch row: the same show twice on one screen reads as a
+            // duplicate, not as a recommendation. Series ids are included because a resume row
+            // holds episodes while a recommendation holds the series.
+            val shelfExcludedIds =
+                remember(homeRows) {
+                    buildSet {
+                        homeRows.forEach { row ->
+                            if (row is HomeRowLoadingState.Success) {
+                                row.items.forEach { item ->
+                                    item ?: return@forEach
+                                    add(item.id)
+                                    item.data.seriesId?.let(::add)
+                                }
+                            }
+                        }
+                    }
+                }
             HomePageContent(
                 homeRows = homeRows,
                 position = position,
@@ -223,9 +261,83 @@ fun HomePage(
                 loadingState = refreshing,
                 showClock = preferences.appPreferences.interfacePreferences.showClock,
                 onUpdateBackdrop = viewModel::updateBackdrop,
-                showLogo = preferences.appPreferences.interfacePreferences.showLogos,
+                showLogo = showLogo,
                 showViewMore = true,
                 onClickViewMore = onClickViewMore,
+                // Discovery sits after the watch row it follows, so the two read as one answer:
+                // "here is where you are, here is what is like it". Saved titles come first: the
+                // viewer put them there on purpose, so they outrank a suggestion. For You sits
+                // between them because it is the one shelf whose every card is already playable.
+                shelves =
+                    listOf(
+                        { reportFocus ->
+                            WatchlistShelf(
+                                onFindInLibrary = { item ->
+                                    viewModel.navigationManager.navigateTo(Destination.Search(item.displayTitle))
+                                },
+                            )
+                        },
+                        { reportFocus ->
+                            ForYouShelf(
+                                state = forYou,
+                                excludeIds = shelfExcludedIds,
+                                onClickItem = { item ->
+                                    viewModel.navigationManager.navigateTo(item.destination())
+                                },
+                                onPlayItem = { item ->
+                                    viewModel.navigationManager.navigateTo(Destination.Playback(item))
+                                },
+                                onFocusItem = reportFocus,
+                            )
+                        },
+                        { reportFocus ->
+                            TmdbHomeShelf(
+                                state = tmdbHome,
+                                onFindInLibrary = { item ->
+                                    viewModel.navigationManager.navigateTo(Destination.Search(item.displayTitle))
+                                },
+                                onFocusItem = tmdbHomeViewModel::submitBackdrop,
+                                onFocusSeed = reportFocus,
+                            )
+                        },
+                        { _ ->
+                            if (preferences.seerrEnabled) {
+                                SeerrRequestShelf(
+                                    state = seerrRequests,
+                                    onFindInLibrary = { item ->
+                                        viewModel.navigationManager.navigateTo(Destination.Search(item.displayTitle))
+                                    },
+                                    onFocusItem = seerrRequestsViewModel::submitBackdrop,
+                                )
+                            }
+                        },
+                        { _ ->
+                            TmdbTopTenShelf(
+                                state = tmdbTopTen,
+                                onFindInLibrary = { item ->
+                                    viewModel.navigationManager.navigateTo(Destination.Search(item.displayTitle))
+                                },
+                                onFocusItem = tmdbTopTenViewModel::submitBackdrop,
+                            )
+                        },
+                    ),
+                headerComposable =
+                    if (LocalLiquidGlass.current) {
+                        { focusedItem ->
+                            GlassHomeHeader(
+                                item = focusedItem,
+                                showLogo = showLogo,
+                                onPlay = { item ->
+                                    viewModel.navigationManager.navigateTo(Destination.Playback(item))
+                                },
+                                onDetails = { item ->
+                                    viewModel.navigationManager.navigateTo(item.destination())
+                                },
+                            )
+                        }
+                    } else {
+                        null
+                    },
                 modifier = modifier,
             )
             overviewDialog?.let { info ->
@@ -265,6 +377,26 @@ fun HomePage(
     }
 }
 
+/**
+ * One child of the home page's lazy list: a library row, or a discovery shelf drawn after the
+ * watch row. A shelf is a separate list entry so the page can scroll it into view on its own.
+ */
+private sealed interface HomeListEntry {
+    val key: String
+
+    data class Row(
+        val index: Int,
+    ) : HomeListEntry {
+        override val key: String get() = "row_$index"
+    }
+
+    data class Shelf(
+        val index: Int,
+    ) : HomeListEntry {
+        override val key: String get() = "shelf_$index"
+    }
+}
+
 val HomeRowLoadingState?.isContinueWatchingNextUp: Boolean
     get() =
         (this as? HomeRowLoadingState.Success).let { row ->
@@ -291,20 +423,60 @@ fun HomePageContent(
     listState: LazyListState = rememberLazyListState(),
     takeFocus: Boolean = true,
     showEmptyRows: Boolean = false,
-    headerComposable: @Composable (focusedItem: BaseItem?) -> Unit = { focusedItem ->
-        HomePageHeader(
-            item = focusedItem,
-            showLogo = showLogo,
-            modifier = HeaderUtils.modifier,
-        )
-    },
+    headerComposable: (@Composable (focusedItem: BaseItem?) -> Unit)? = null,
     onClickViewMore: (RowColumn, HomeRowLoadingState.Success) -> Unit = { _, _ -> },
+    /**
+     * Rows that are not library rows — the discovery shelves — drawn after the watch row.
+     *
+     * One lazy item each rather than one item containing all of them: a block taller than the
+     * viewport cannot be scrolled fully into view, so stacking two shelves in one slot left the
+     * bottom row sliced by the screen edge every time focus reached it.
+     *
+     * Each shelf reports the item its focus is on. Shelves of real library items (For You) report
+     * the focused card, so the hero shows that exact title; a discovery shelf whose posters are
+     * not library items (TMDB) reports the seed it is recommending from. The wrapper clears the
+     * report when focus leaves the shelf, which is what sends the hero back to the row above.
+     */
+    shelves: List<@Composable (reportFocus: (BaseItem?) -> Unit) -> Unit> = emptyList(),
 ) {
-    val focusedItem =
+    val rowFocusedItem =
         remember(homeRows, position) {
             (homeRows.getOrNull(position.row) as? HomeRowLoadingState.Success)?.items?.getOrNull(
                 position.column,
             )
+        }
+
+    // Shelf cards are not part of `position`, so they cannot report through it. The hero follows
+    // the focused shelf card instead of keeping whatever library row was focused last.
+    var shelfFocusedItem by remember { mutableStateOf<BaseItem?>(null) }
+    val focusedItem = shelfFocusedItem ?: rowFocusedItem
+
+    // After the watch row when there is one, otherwise at the end of the stack: a home page the
+    // viewer arranged without a continue-watching row should not have a discovery rail pushed into
+    // the middle of it.
+    val shelfAfterRow =
+        remember(homeRows, shelves.size) {
+            if (shelves.isEmpty()) {
+                null
+            } else {
+                homeRows
+                    .indexOfFirst { it.isContinueWatchingNextUp }
+                    .takeIf { it >= 0 }
+                    ?: homeRows.lastIndex.takeIf { it >= 0 }
+            }
+        }
+
+    // Rows and shelves as one ordered list of entries, so each shelf is its own lazy item and
+    // can be scrolled into view on its own. Built from indices only: it holds no lambdas, so it
+    // is cheap and cannot go stale.
+    val entries: List<HomeListEntry> =
+        buildList {
+            homeRows.forEachIndexed { index, _ ->
+                add(HomeListEntry.Row(index))
+                if (index == shelfAfterRow) {
+                    shelves.indices.forEach { add(HomeListEntry.Shelf(it)) }
+                }
+            }
         }
 
     val rowFocusRequesters = remember(homeRows.size) { List(homeRows.size) { FocusRequester() } }
@@ -315,22 +487,47 @@ fun HomePageContent(
     val currentOnClickPlay by rememberUpdatedState(onClickPlay)
 
     if (takeFocus) {
+        // Rows are drawn as placeholders the moment the page opens and fill in as their queries
+        // return, so focus may not be given to a row that is still a skeleton: that placeholder
+        // leaves the composition when the real row arrives, and the D-pad's next press then
+        // searches from nothing and lands on the first discovery shelf — scrolling the whole home
+        // page past its own library rows. Wait for a row with real cards in it.
+        val rowHasCards: (HomeRowLoadingState?) -> Boolean = { row ->
+            row is HomeRowLoadingState.Success && row.items.isNotEmpty()
+        }
         LaunchedEffect(homeRows) {
             if (!firstFocused && homeRows.isNotEmpty()) {
-                if (position.row >= 0) {
-                    val index = position.row.coerceIn(0, rowFocusRequesters.lastIndex)
-                    rowFocusRequesters.getOrNull(index)?.tryRequestFocus()
-                    firstFocused = true
-                } else {
-                    // Waiting for the first home row to load, then focus on it
-                    homeRows
-                        .indexOfFirstOrNull { it is HomeRowLoadingState.Success && it.items.isNotEmpty() }
-                        ?.let {
-                            rowFocusRequesters[it].tryRequestFocus()
+                val preferred = position.row.coerceIn(0, rowFocusRequesters.lastIndex)
+                val index =
+                    preferred.takeIf { rowHasCards(homeRows.getOrNull(it)) }
+                        ?: homeRows.indexOfFirst(rowHasCards)
+                if (index >= 0) {
+                    // Anchor the list at its first item before focus is taken. The rows arrive at
+                    // different times, and by the time the first card can hold focus the list can
+                    // already have drifted a few tens of dp — enough to slice the first row's
+                    // heading off the top of the page on open.
+                    listState.scrollToItem(0)
+                    // The row's own composition is what attaches this requester, and a row can be
+                    // in the data before its cards are laid out. Retry rather than give up: a
+                    // request that lands on nothing must not be recorded as "focus was taken",
+                    // because the page would then have no focused control at all and every
+                    // D-pad press would do nothing until the viewer left the page.
+                    val requester = rowFocusRequesters.getOrNull(index)
+                    repeat(10) {
+                        val taken = requester != null && runCatching { requester.requestFocus() }.isSuccess
+                        if (taken) {
+                            // The first focus is not a scroll. `ScrollToTopBringIntoViewSpec`
+                            // keeps a row's heading visible while the viewer moves between
+                            // shelves, but on the page's first focus the list is already at the
+                            // top, and aligning the focused row to that edge slid the heading —
+                            // and half of the row above it — off the screen before the viewer
+                            // had read anything. Use the default spec for that one request.
+                            delay(120)
                             firstFocused = true
-                            delay(50)
-                            listState.scrollToItem(it)
+                            return@LaunchedEffect
                         }
+                        delay(50)
+                    }
                 }
             }
         }
@@ -338,6 +535,20 @@ fun HomePageContent(
     LaunchedEffect(onUpdateBackdrop, focusedItem) {
         focusedItem?.let { onUpdateBackdrop.invoke(it) }
     }
+    val header: @Composable (focusedItem: BaseItem?) -> Unit =
+        headerComposable ?: { focusedItem ->
+            HomePageHeader(
+                item = focusedItem,
+                showLogo = showLogo,
+                modifier =
+                    if (LocalLiquidGlass.current) {
+                        HeaderUtils.glassModifier
+                    } else {
+                        HeaderUtils.modifier
+                    },
+            )
+        }
+
     Box(modifier = modifier) {
         Column(
             modifier =
@@ -348,19 +559,28 @@ fun HomePageContent(
                         }
                     }.fillMaxSize(),
         ) {
-            headerComposable.invoke(focusedItem)
+            header.invoke(focusedItem)
 
             val density = LocalDensity.current
             val spaceAbovePx =
                 remember(density) {
                     with(density) {
-                        // The size of the row titles & spacing
-                        50.dp.toPx()
+                        // Room for a row's heading when a row is scrolled to the top: a title
+                        // (36dp), its gap, and — on the discovery shelf — the required TMDB
+                        // credit under it (14dp) plus the shelf's own top padding. At the old
+                        // 50dp the shelf's heading was sliced in half every time focus reached
+                        // its posters, and a clipped credit is a clipped attribution.
+                        70.dp.toPx()
                     }
                 }
             val defaultBringIntoViewSpec = LocalBringIntoViewSpec.current
             CompositionLocalProvider(
-                LocalBringIntoViewSpec provides ScrollToTopBringIntoViewSpec(spaceAbovePx),
+                LocalBringIntoViewSpec provides
+                    if (firstFocused) {
+                        ScrollToTopBringIntoViewSpec(spaceAbovePx)
+                    } else {
+                        defaultBringIntoViewSpec
+                    },
             ) {
                 LazyColumn(
                     state = listState,
@@ -373,7 +593,20 @@ fun HomePageContent(
                         Modifier
                             .focusRestorer(),
                 ) {
-                    itemsIndexed(homeRows) { rowIndex, row ->
+                    items(entries, key = { it.key }) { entry ->
+                        if (entry is HomeListEntry.Shelf) {
+                            Box(
+                                modifier =
+                                    Modifier.onFocusChanged {
+                                        if (!it.hasFocus) shelfFocusedItem = null
+                                    },
+                            ) {
+                                shelves[entry.index].invoke { item -> shelfFocusedItem = item }
+                            }
+                            return@items
+                        }
+                        val rowIndex = (entry as HomeListEntry.Row).index
+                        val row = homeRows[rowIndex]
                         val rowModifier =
                             Modifier
                                 .animateItem(placementSpec = null)
@@ -592,44 +825,76 @@ fun HomePageHeader(
     logoImageUrl: String?,
     modifier: Modifier = Modifier,
 ) {
-    Column(
-        verticalArrangement = Arrangement.spacedBy(4.dp),
-        modifier = modifier,
-    ) {
-        TitleOrLogo(
-            title = title,
-            logoImageUrl = logoImageUrl,
-            showLogo = showLogo,
-            modifier = Modifier.fillMaxWidth(.75f),
-        )
+    val copy: @Composable () -> Unit = {
         Column(
-            verticalArrangement = Arrangement.spacedBy(8.dp),
-            modifier =
-                Modifier
-                    .fillMaxWidth(.6f),
+            verticalArrangement = Arrangement.spacedBy(4.dp),
         ) {
-            if (subtitle != null) {
-                EpisodeName(subtitle)
-            }
-            QuickDetails(quickDetails, timeRemaining, endsAt = endsAt)
-            val overviewModifier =
-                Modifier
-                    .padding(0.dp)
-                    .height(48.dp + if (!overviewTwoLines) 12.dp else 0.dp)
-                    .width(400.dp)
-            if (overview.isNotNullOrBlank()) {
-                Text(
-                    text = overview,
-                    style = MaterialTheme.typography.bodyMedium,
-                    color = MaterialTheme.colorScheme.onSurface,
-                    maxLines = if (overviewTwoLines) 2 else 3,
-                    overflow = TextOverflow.Ellipsis,
-                    modifier = overviewModifier,
-                )
-            } else {
-                Spacer(overviewModifier)
+            TitleOrLogo(
+                title = title,
+                logoImageUrl = logoImageUrl,
+                showLogo = showLogo,
+                modifier = Modifier.fillMaxWidth(.75f),
+            )
+            Column(
+                verticalArrangement = Arrangement.spacedBy(8.dp),
+                modifier =
+                    Modifier
+                        .fillMaxWidth(.6f),
+            ) {
+                if (subtitle != null) {
+                    EpisodeName(subtitle)
+                }
+                QuickDetails(quickDetails, timeRemaining, endsAt = endsAt)
+                // Glass headers sit inside a fixed 200dp slot on library pages, and the panel's
+                // rim is what clips the copy. Two lines of synopsis is what fits under the logo,
+                // the metadata and the genre line without the last row being sliced by the edge.
+                val glassHeader = LocalLiquidGlass.current
+                val overviewModifier =
+                    Modifier
+                        .padding(0.dp)
+                        .height(
+                            if (glassHeader) {
+                                40.dp
+                            } else {
+                                48.dp + if (!overviewTwoLines) 12.dp else 0.dp
+                            },
+                        ).width(400.dp)
+                if (overview.isNotNullOrBlank()) {
+                    Text(
+                        text = overview,
+                        style = MaterialTheme.typography.bodyMedium,
+                        color = MaterialTheme.colorScheme.onSurface,
+                        maxLines = if (glassHeader || overviewTwoLines) 2 else 3,
+                        overflow = TextOverflow.Ellipsis,
+                        modifier = overviewModifier,
+                    )
+                } else {
+                    Spacer(overviewModifier)
+                }
             }
         }
+    }
+    if (LocalLiquidGlass.current) {
+        // Library pages use the same pane as the home hero, so moving from Home into a
+        // collection does not drop the material for plain type on bare artwork. The page frame
+        // already insets its content, so the pane adds no margin of its own: its edge lines up
+        // with the row titles underneath.
+        Box(
+            modifier =
+                modifier
+                    .fillMaxWidth(),
+        ) {
+            GlassPanel(
+                modifier = Modifier.fillMaxWidth(0.66f),
+                scrim = 1f,
+            ) {
+                Box(Modifier.padding(horizontal = 22.dp, vertical = 20.dp)) {
+                    copy()
+                }
+            }
+        }
+    } else {
+        Column(modifier = modifier) { copy() }
     }
 }
 

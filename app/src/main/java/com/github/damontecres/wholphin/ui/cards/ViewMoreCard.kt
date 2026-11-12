@@ -21,6 +21,7 @@ import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextAlign
@@ -39,6 +40,7 @@ import com.github.damontecres.wholphin.ui.AspectRatio
 import com.github.damontecres.wholphin.ui.Cards
 import com.github.damontecres.wholphin.ui.PreviewTvSpec
 import com.github.damontecres.wholphin.ui.enableMarquee
+import com.github.damontecres.wholphin.ui.theme.LocalLiquidGlass
 import com.github.damontecres.wholphin.ui.theme.WholphinTheme
 import kotlinx.coroutines.delay
 
@@ -88,9 +90,18 @@ fun ViewMoreCard(
             onClick = onClick,
             onLongClick = onLongClick,
             interactionSource = interactionSource,
+            shape = glassCardShape(),
+            border = glassCardBorder(),
+            glow = glassCardGlow(),
+            scale = glassCardScale(),
             colors =
                 CardDefaults.colors(
-                    containerColor = MaterialTheme.colorScheme.surfaceColorAtElevation(1.dp),
+                    containerColor =
+                        if (LocalLiquidGlass.current) {
+                            Color.White.copy(alpha = 0.10f)
+                        } else {
+                            MaterialTheme.colorScheme.surfaceColorAtElevation(1.dp)
+                        },
                 ),
         ) {
             Box(

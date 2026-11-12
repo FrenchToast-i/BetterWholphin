@@ -38,6 +38,7 @@ import com.github.damontecres.wholphin.services.hilt.DeviceModule
 import com.github.damontecres.wholphin.services.hilt.IoCoroutineScope
 import com.github.damontecres.wholphin.services.hilt.IoDispatcher
 import com.github.damontecres.wholphin.services.hilt.StandardOkHttpClient
+import com.github.damontecres.wholphin.services.WatchPartySocketTap
 import com.github.damontecres.wholphin.util.CoroutineContextApiClientFactory
 import com.github.damontecres.wholphin.util.WholphinDispatchers
 import dagger.Module
@@ -132,7 +133,7 @@ object TestModule {
     @Singleton
     fun okHttpFactory(
         @StandardOkHttpClient okHttpClient: OkHttpClient,
-    ) = CoroutineContextApiClientFactory(OkHttpFactory(okHttpClient))
+    ) = CoroutineContextApiClientFactory(OkHttpFactory(okHttpClient), WatchPartySocketTap())
 
     @Provides
     @Singleton

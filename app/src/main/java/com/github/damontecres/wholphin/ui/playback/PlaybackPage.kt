@@ -93,6 +93,7 @@ import com.github.damontecres.wholphin.ui.preferences.subtitle.SubtitleSettings.
 import com.github.damontecres.wholphin.ui.preferences.subtitle.SubtitleSettings.calculateEdgeSize
 import com.github.damontecres.wholphin.ui.seasonEpisode
 import com.github.damontecres.wholphin.ui.tryRequestFocus
+import com.github.damontecres.wholphin.ui.watchparty.WatchPartyDialog
 import com.github.damontecres.wholphin.util.ExceptionHandler
 import com.github.damontecres.wholphin.util.LoadingState
 import com.github.damontecres.wholphin.util.Media3SubtitleOverride
@@ -172,6 +173,33 @@ fun PlaybackPageContent(
     var showDebugInfo by remember { mutableStateOf(prefs.showDebugInfo) }
 
     var playbackDialog by remember { mutableStateOf<PlaybackDialogType?>(null) }
+
+    // The sleep timer lives in the ViewModel, but its picker is a page-level dialog like the
+    // caption and audio sheets, so the deck only has to raise a flag.
+    var sleepTimerDialog by remember { mutableStateOf(false) }
+    val sleepTimer by viewModel.sleepTimer.collectAsState()
+
+    // Watch together: the deck's party capsule opens the same dialog the detail pages use, and a
+    // guest's queue target is opened here so a host changing title moves the other television.
+    val watchParty by viewModel.watchParty.collectAsState()
+    val watchPartyJoin by viewModel.watchPartyJoinTarget.collectAsState()
+    var watchPartyDialog by remember { mutableStateOf(false) }
+    // The target can arrive before the page has resolved its title (the group's queue lands while
+    // the player is still loading), so the current item is a key: the effect waits for it rather
+    // than comparing against a `lateinit` that is not set yet.
+    val watchPartyItemId = state.currentPlayback?.item?.id
+    LaunchedEffect(watchPartyJoin, watchPartyDialog, watchPartyItemId) {
+        if (watchPartyDialog) return@LaunchedEffect
+        val target = watchPartyJoin ?: return@LaunchedEffect
+        val currentId = watchPartyItemId ?: return@LaunchedEffect
+        viewModel.consumeWatchPartyJoin()
+        if (target.itemId != currentId) {
+            viewModel.navigationManager.goBack()
+            viewModel.navigationManager.navigateTo(Destination.Playback(target.itemId, target.positionMs))
+        } else {
+            viewModel.applyWatchPartyJoin(target)
+        }
+    }
 
     var contentScale by remember(playerBackend) {
         mutableStateOf(
@@ -454,9 +482,10 @@ fun PlaybackPageContent(
             }
 
             val controlsVisible =
-                remember(controllerViewState.controlsVisible, playbackDialog, subtitleSearchState) {
+                remember(controllerViewState.controlsVisible, playbackDialog, subtitleSearchState, sleepTimerDialog) {
                     controllerViewState.controlsVisible ||
                         playbackDialog != null ||
+                        sleepTimerDialog ||
                         subtitleSearchState.status != SubtitleSearchStatus.Inactive
                 }
             if (!controlsVisible && skipIndicatorDuration == 0L) {
@@ -499,7 +528,33 @@ fun PlaybackPageContent(
                 currentSegment = state.currentSegment?.segment,
                 showClock = preferences.appPreferences.interfacePreferences.showClock,
                 analyticsState = state.analyticsState,
+                sleepTimerRemainingSeconds = sleepTimer?.remainingSeconds,
+                onSleepTimerClick = { sleepTimerDialog = true },
+                watchParty = watchParty,
+                onWatchPartyClick = { watchPartyDialog = true },
             )
+
+            if (watchPartyDialog) {
+                WatchPartyDialog(
+                    title = state.currentPlayback?.item?.title,
+                    onDismissRequest = { watchPartyDialog = false },
+                    onStartParty = {
+                        watchPartyDialog = false
+                        viewModel.startWatchPartyNow()
+                    },
+                    onJoined = { target ->
+                        watchPartyDialog = false
+                        if (watchPartyItemId != null && target.itemId != watchPartyItemId) {
+                            viewModel.navigationManager.goBack()
+                            viewModel.navigationManager.navigateTo(
+                                Destination.Playback(target.itemId, target.positionMs),
+                            )
+                        } else {
+                            viewModel.applyWatchPartyJoin(target)
+                        }
+                    },
+                )
+            }
 
             var subtitleStyleAppliedForHdr by remember { mutableStateOf(state.currentMediaInfo.videoStream?.hdr == true) }
             val subtitleSettings =
@@ -644,7 +699,10 @@ fun PlaybackPageContent(
                     .align(Alignment.BottomCenter),
         ) {
             state.nextUp?.let {
-                var autoPlayEnabled by remember { mutableStateOf(viewModel.shouldAutoPlayNextUp()) }
+                // A sleep timer is an instruction to stop, not to roll into another episode:
+                // the next-up card waits for the viewer instead of starting one the timer would
+                // cut in half.
+                var autoPlayEnabled by remember { mutableStateOf(viewModel.shouldAutoPlayNextUp() && sleepTimer == null) }
                 var timeLeft by remember {
                     mutableLongStateOf(
                         preferences.appPreferences.playbackPreferences.autoPlayNextDelaySeconds,
@@ -736,6 +794,24 @@ fun PlaybackPageContent(
                 )
             }
         }
+    }
+
+    if (sleepTimerDialog) {
+        SleepTimerDialog(
+            currentMinutes = sleepTimer?.minutes,
+            bedtimeMinutes = viewModel.minutesUntilBedtime(),
+            onDismissRequest = {
+                sleepTimerDialog = false
+                if (controllerViewState.controlsVisible) {
+                    controllerViewState.pulseControls()
+                }
+            },
+            onSelect = { minutes ->
+                sleepTimerDialog = false
+                viewModel.setSleepTimer(minutes)
+                controllerViewState.pulseControls()
+            },
+        )
     }
 
     playbackDialog?.let { type ->

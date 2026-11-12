@@ -2,9 +2,8 @@ package com.github.damontecres.wholphin.ui.detail.collection
 
 import androidx.compose.foundation.focusGroup
 import androidx.compose.foundation.layout.Arrangement
-import androidx.compose.foundation.layout.PaddingValues
 import androidx.compose.foundation.layout.Row
-import androidx.compose.foundation.lazy.LazyRow
+import androidx.compose.foundation.layout.Spacer
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.MoreVert
 import androidx.compose.material.icons.filled.PlayArrow
@@ -31,6 +30,16 @@ import com.github.damontecres.wholphin.ui.data.MovieSortOptions
 import com.github.damontecres.wholphin.ui.data.SortAndDirection
 import kotlin.time.Duration
 
+/**
+ * A collection page's actions, and its sort/filter controls, on one line.
+ *
+ * They used to be two `LazyRow`s meeting in a `SpaceBetween` row, which read correctly but did not
+ * *travel* correctly: the two lazy lists measured to overlapping widths, so a D-pad press from
+ * Play skipped the shuffle, favourite, view-options and overflow discs entirely and landed on the
+ * sort pill. View options was therefore unreachable from the page that needs it. The whole line
+ * is one plain row now — there are at most eight controls and a 66%-wide sheet has room for them,
+ * so the lazy lists bought nothing but a broken focus chain.
+ */
 @Composable
 fun CollectionButtons(
     state: CollectionState,
@@ -49,100 +58,62 @@ fun CollectionButtons(
     val filterOptions = DefaultFilterOptions
     val firstFocus = remember { FocusRequester() }
     Row(
-        horizontalArrangement = Arrangement.SpaceBetween,
-        modifier = modifier,
+        horizontalArrangement = Arrangement.spacedBy(16.dp),
+        verticalAlignment = Alignment.CenterVertically,
+        modifier =
+            modifier
+                .focusGroup()
+                .focusRestorer(firstFocus),
     ) {
-        LazyRow(
-            horizontalArrangement = Arrangement.spacedBy(16.dp),
-            verticalAlignment = Alignment.CenterVertically,
-            contentPadding = PaddingValues(8.dp),
-            modifier =
-                Modifier
-                    .focusGroup()
-                    .focusRestorer(firstFocus),
-        ) {
-            item {
-                ExpandablePlayButton(
-                    title = R.string.play,
-                    resume = Duration.ZERO,
-                    icon = Icons.Default.PlayArrow,
-                    onClick = { onClickPlayAll.invoke(false) },
-                    modifier = Modifier.focusRequester(firstFocus),
-                )
-            }
-            item {
-                ExpandableFaButton(
-                    title = R.string.shuffle,
-                    iconStringRes = R.string.fa_shuffle,
-                    onClick = { onClickPlayAll.invoke(true) },
-                )
-            }
-
-            item("favorite") {
-                val favorite = remember(state.collection) { state.collection?.favorite == true }
-                ExpandableFaButton(
-                    title = if (favorite) R.string.remove_favorite else R.string.add_favorite,
-                    iconStringRes = R.string.fa_heart,
-                    onClick = favoriteOnClick,
-                    iconColor = if (favorite) Color.Red else Color.Unspecified,
-                    modifier = Modifier,
-                )
-            }
-            if (canDelete) {
-                item("delete") {
-                    DeleteButton(
-                        title = state.collection?.title ?: "",
-                        onConfirmDelete = onConfirmDelete,
-                        modifier = Modifier,
-                    )
-                }
-            }
-
-            item {
-                ExpandableFaButton(
-                    title = R.string.view_options,
-                    iconStringRes = R.string.fa_sliders,
-                    onClick = onClickViewOptions,
-                    modifier = Modifier,
-                )
-            }
-
-            // More button
-            item("more") {
-                ExpandablePlayButton(
-                    title = R.string.more,
-                    resume = Duration.ZERO,
-                    icon = Icons.Default.MoreVert,
-                    onClick = { moreOnClick.invoke() },
-                    modifier = Modifier,
-                )
-            }
+        ExpandablePlayButton(
+            title = R.string.play,
+            resume = Duration.ZERO,
+            icon = Icons.Default.PlayArrow,
+            onClick = { onClickPlayAll.invoke(false) },
+            modifier = Modifier.focusRequester(firstFocus),
+        )
+        ExpandableFaButton(
+            title = R.string.shuffle,
+            iconStringRes = R.string.fa_shuffle,
+            onClick = { onClickPlayAll.invoke(true) },
+        )
+        val favorite = remember(state.collection) { state.collection?.favorite == true }
+        ExpandableFaButton(
+            title = if (favorite) R.string.remove_favorite else R.string.add_favorite,
+            iconStringRes = R.string.fa_heart,
+            onClick = favoriteOnClick,
+            iconColor = if (favorite) Color.Red else Color.Unspecified,
+        )
+        if (canDelete) {
+            DeleteButton(
+                title = state.collection?.title ?: "",
+                onConfirmDelete = onConfirmDelete,
+            )
         }
-        LazyRow(
-            horizontalArrangement = Arrangement.spacedBy(16.dp),
-            verticalAlignment = Alignment.CenterVertically,
-            contentPadding = PaddingValues(8.dp),
-            modifier =
-                Modifier
-                    .focusGroup(),
-        ) {
-            item {
-                SortByButton(
-                    sortOptions = sortOptions,
-                    current = state.sortAndDirection,
-                    onSortChange = onSortChange,
-                    modifier = Modifier,
-                )
-            }
-            item {
-                FilterByButton(
-                    filterOptions = filterOptions,
-                    current = state.itemFilter,
-                    onFilterChange = onFilterChange,
-                    getPossibleValues = getPossibleFilterValues,
-                    modifier = Modifier,
-                )
-            }
-        }
+        ExpandableFaButton(
+            title = R.string.view_options,
+            iconStringRes = R.string.fa_sliders,
+            onClick = onClickViewOptions,
+        )
+        ExpandablePlayButton(
+            title = R.string.more,
+            resume = Duration.ZERO,
+            icon = Icons.Default.MoreVert,
+            onClick = { moreOnClick.invoke() },
+        )
+        // The sort controls settle against the far edge of the sheet, but they are part of the
+        // same focus line as the actions.
+        Spacer(Modifier.weight(1f))
+        SortByButton(
+            sortOptions = sortOptions,
+            current = state.sortAndDirection,
+            onSortChange = onSortChange,
+        )
+        FilterByButton(
+            filterOptions = filterOptions,
+            current = state.itemFilter,
+            onFilterChange = onFilterChange,
+            getPossibleValues = getPossibleFilterValues,
+        )
     }
 }

@@ -24,6 +24,7 @@ import androidx.compose.foundation.lazy.rememberLazyListState
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
+import androidx.compose.runtime.ReadOnlyComposable
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
@@ -65,8 +66,13 @@ import com.github.damontecres.wholphin.ui.enableMarquee
 import com.github.damontecres.wholphin.ui.formatDuration
 import com.github.damontecres.wholphin.ui.ifElse
 import com.github.damontecres.wholphin.ui.launchIO
+import com.github.damontecres.wholphin.ui.preferences.glassListItemColors
+import com.github.damontecres.wholphin.ui.preferences.glassListItemGlow
+import com.github.damontecres.wholphin.ui.preferences.glassListItemShape
+import com.github.damontecres.wholphin.ui.preferences.glassListItemTonalElevation
 import com.github.damontecres.wholphin.ui.rememberInt
 import com.github.damontecres.wholphin.ui.roundMinutes
+import com.github.damontecres.wholphin.ui.theme.LocalLiquidGlass
 import com.github.damontecres.wholphin.ui.tryRequestFocus
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.launch
@@ -367,6 +373,9 @@ fun ListItemGeneric(
         },
         scale = scale,
         colors = listItemColors(),
+        shape = glassListItemShape(),
+        glow = glassListItemGlow(),
+        tonalElevation = glassListItemTonalElevation(),
         interactionSource = interactionSource,
         modifier = modifier,
     )
@@ -433,6 +442,9 @@ fun ListItemMovie(
         },
         scale = scale,
         colors = listItemColors(),
+        shape = glassListItemShape(),
+        glow = glassListItemGlow(),
+        tonalElevation = glassListItemTonalElevation(),
         interactionSource = interactionSource,
         modifier = modifier,
     )
@@ -498,6 +510,9 @@ fun ListItemSeries(
         trailingContent = trailingContent,
         scale = scale,
         colors = listItemColors(),
+        shape = glassListItemShape(),
+        glow = glassListItemGlow(),
+        tonalElevation = glassListItemTonalElevation(),
         interactionSource = interactionSource,
         modifier = modifier,
     )
@@ -578,6 +593,9 @@ fun ListItemAlbum(
         overlineContent = overlineContent,
         scale = scale,
         colors = listItemColors(),
+        shape = glassListItemShape(),
+        glow = glassListItemGlow(),
+        tonalElevation = glassListItemTonalElevation(),
         interactionSource = interactionSource,
         modifier = modifier,
     )
@@ -611,13 +629,25 @@ private fun TitleContent(
     )
 }
 
+/**
+ * A library row in list mode.
+ *
+ * The stock list item paints a half-opaque elevation surface. In glass mode that is a grey slab
+ * over the artwork and a second material under the real one, so the row becomes part of the
+ * sheet: transparent at rest, the same white focus wash every other glass row uses.
+ */
 @Composable
+@ReadOnlyComposable
 fun listItemColors() =
-    ListItemDefaults.colors(
-        containerColor =
-            MaterialTheme.colorScheme
-                .surfaceColorAtElevation(1.dp)
-                .copy(alpha = .5f),
-    )
+    if (LocalLiquidGlass.current) {
+        glassListItemColors()
+    } else {
+        ListItemDefaults.colors(
+            containerColor =
+                MaterialTheme.colorScheme
+                    .surfaceColorAtElevation(1.dp)
+                    .copy(alpha = .5f),
+        )
+    }
 
 private val scale = ListItemDefaults.scale(focusedScale = 1f, pressedScale = .95f)

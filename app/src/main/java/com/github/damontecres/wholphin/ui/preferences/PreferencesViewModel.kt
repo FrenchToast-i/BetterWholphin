@@ -18,6 +18,8 @@ import com.github.damontecres.wholphin.data.model.JellyfinUser
 import com.github.damontecres.wholphin.preferences.AppPreferences
 import com.github.damontecres.wholphin.preferences.resetSubtitles
 import com.github.damontecres.wholphin.preferences.updateSubtitlePreferences
+import com.github.damontecres.wholphin.services.AccountPreferences
+import com.github.damontecres.wholphin.services.AccountPreferencesService
 import com.github.damontecres.wholphin.services.BackdropService
 import com.github.damontecres.wholphin.services.NavigationManager
 import com.github.damontecres.wholphin.services.Release
@@ -54,6 +56,7 @@ class PreferencesViewModel
         val screensaverService: ScreensaverService,
         private val serverRepository: ServerRepository,
         private val seerrServerRepository: SeerrServerRepository,
+        private val accountPreferencesService: AccountPreferencesService,
         private val updateChecker: UpdateChecker,
         private val serverReportService: ServerReportService,
     ) : ViewModel() {
@@ -71,6 +74,19 @@ class PreferencesViewModel
             )
 
         val seerrConnection = seerrServerRepository.connection
+
+        /**
+         * The signed-in account's own settings.
+         *
+         * The look and the discovery key are per profile, so the settings sheet reads this
+         * overlay instead of the device's preference file for those two rows.
+         */
+        val accountPreferences =
+            accountPreferencesService.current.stateIn(
+                viewModelScope,
+                SharingStarted.Eagerly,
+                AccountPreferences.Default,
+            )
 
         private val _quickConnectStatus = MutableStateFlow<LoadingState>(LoadingState.Pending)
         val quickConnectStatus: StateFlow<LoadingState> = _quickConnectStatus
@@ -121,6 +137,24 @@ class PreferencesViewModel
             viewModelScope.launchIO {
                 resetSubtitleSettings(preferenceDataStore)
             }
+        }
+
+        /**
+         * Liquid Glass belongs to the person watching: two profiles on one television can
+         * choose different looks. Switching it takes effect immediately because the preference
+         * flow sits above the navigation host.
+         */
+        fun setLiquidGlass(enabled: Boolean) {
+            viewModelScope.launchIO { accountPreferencesService.setLiquidGlass(enabled) }
+        }
+
+        /** The TMDB key follows the same rule; discovery is per profile. */
+        fun setSeerrEnabled(enabled: Boolean) {
+            viewModelScope.launchIO { accountPreferencesService.setSeerrEnabled(enabled) }
+        }
+
+        fun setTmdbApiKey(key: String) {
+            viewModelScope.launchIO { accountPreferencesService.setTmdbApiKey(key) }
         }
 
         fun setPin(

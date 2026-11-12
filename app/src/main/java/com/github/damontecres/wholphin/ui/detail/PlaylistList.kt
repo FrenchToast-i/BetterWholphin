@@ -35,6 +35,7 @@ import androidx.compose.ui.focus.FocusRequester
 import androidx.compose.ui.focus.focusProperties
 import androidx.compose.ui.focus.focusRequester
 import androidx.compose.ui.focus.onFocusChanged
+import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.ui.platform.LocalView
 import androidx.compose.ui.res.pluralStringResource
@@ -56,6 +57,9 @@ import androidx.tv.material3.surfaceColorAtElevation
 import com.github.damontecres.wholphin.R
 import com.github.damontecres.wholphin.data.model.PlaylistInfo
 import com.github.damontecres.wholphin.ui.components.BasicDialog
+import com.github.damontecres.wholphin.ui.components.glassDialogSurface
+import com.github.damontecres.wholphin.ui.ifElse
+import com.github.damontecres.wholphin.ui.theme.LocalLiquidGlass
 import com.github.damontecres.wholphin.ui.components.Button
 import com.github.damontecres.wholphin.ui.components.EditTextBox
 import com.github.damontecres.wholphin.ui.components.ErrorMessage
@@ -218,6 +222,7 @@ fun PlaylistDialog(
 ) {
     val elevatedContainerColor =
         MaterialTheme.colorScheme.surfaceColorAtElevation(elevation)
+    val glass = LocalLiquidGlass.current
 
     val placeholderFocusRequester = remember { FocusRequester() }
     val focusRequester = remember { FocusRequester() }
@@ -247,16 +252,23 @@ fun PlaylistDialog(
             verticalArrangement = Arrangement.spacedBy(8.dp),
             modifier =
                 Modifier
-                    .graphicsLayer {
-                        this.clip = true
-                        this.shape = RoundedCornerShape(24.0.dp)
-                    }.drawBehind { drawRect(color = elevatedContainerColor) }
-                    .padding(PaddingValues(16.dp)),
+                    // The playlist picker is a dialog window with nothing behind it to sample, so
+                    // in glass mode it takes the material's smoked fallback rather than the
+                    // classic elevation slab.
+                    .ifElse(
+                        glass,
+                        Modifier.glassDialogSurface(shape = RoundedCornerShape(24.dp)),
+                        Modifier
+                            .graphicsLayer {
+                                this.clip = true
+                                this.shape = RoundedCornerShape(24.0.dp)
+                            }.drawBehind { drawRect(color = elevatedContainerColor) },
+                    ).padding(PaddingValues(16.dp)),
         ) {
             Text(
                 text = title,
                 style = MaterialTheme.typography.headlineSmall,
-                color = MaterialTheme.colorScheme.onSurface,
+                color = if (glass) Color.White else MaterialTheme.colorScheme.onSurface,
                 textAlign = TextAlign.Center,
                 modifier = Modifier.fillMaxWidth(),
             )

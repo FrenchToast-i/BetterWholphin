@@ -53,6 +53,9 @@ import com.github.damontecres.wholphin.ui.data.SortAndDirection
 import com.github.damontecres.wholphin.ui.detail.PlaylistDialog
 import com.github.damontecres.wholphin.ui.main.HomePageHeader
 import com.github.damontecres.wholphin.ui.nav.Destination
+import com.github.damontecres.wholphin.ui.theme.GlassPanel
+import com.github.damontecres.wholphin.ui.theme.GlassTokens
+import com.github.damontecres.wholphin.ui.theme.LocalLiquidGlass
 import com.github.damontecres.wholphin.ui.tryRequestFocus
 import com.github.damontecres.wholphin.util.HomeRowLoadingState
 import com.github.damontecres.wholphin.util.LoadingState
@@ -340,13 +343,18 @@ fun CollectionDetailsContent(
                             HomePageHeader(
                                 item = focusedItem,
                                 showLogo = preferences.appPreferences.interfacePreferences.showLogos,
+                                // A glass pane measures to its content; the classic slot is fixed.
                                 modifier =
-                                    Modifier
-                                        .padding(
-                                            start = HeaderUtils.startPadding,
-                                            top = HeaderUtils.topPadding,
-                                            bottom = 8.dp,
-                                        ).height(HeaderUtils.height),
+                                    if (LocalLiquidGlass.current) {
+                                        HeaderUtils.glassModifier
+                                    } else {
+                                        Modifier
+                                            .padding(
+                                                start = HeaderUtils.startPadding,
+                                                top = HeaderUtils.topPadding,
+                                                bottom = 8.dp,
+                                            ).height(HeaderUtils.height)
+                                    },
                             )
                         }
                     }
@@ -373,35 +381,70 @@ fun CollectionDetailsContent(
                                     }
                                 },
                     ) {
-                        CollectionDetailsHeader(
-                            collection = state.collection!!,
-                            showLogo = preferences.appPreferences.interfacePreferences.showLogos,
-                            logoImageUrl = state.logoImageUrl,
-                            overviewOnClick = overviewOnClick,
-                            bringIntoViewRequester = bringIntoViewRequester,
-                            modifier =
-                                Modifier
-                                    .padding(
-                                        top = HeaderUtils.topPadding,
-                                        bottom = HeaderUtils.bottomPadding,
-                                    ).height(HeaderUtils.height),
-                        )
-                        CollectionButtons(
-                            state = state,
-                            onSortChange = onSortChange,
-                            onClickPlayAll = onClickPlayAll,
-                            onFilterChange = onFilterChange,
-                            getPossibleFilterValues = getPossibleFilterValues,
-                            onClickViewOptions = onClickViewOptions,
-                            favoriteOnClick = favoriteOnClick,
-                            onConfirmDelete = onConfirmDelete,
-                            canDelete = canDelete,
-                            moreOnClick = moreOnClick,
-                            modifier =
-                                Modifier
-                                    .focusRequester(focusRequester)
-                                    .fillMaxWidth(),
-                        )
+                        val glass = LocalLiquidGlass.current
+                        val headerContent: @Composable () -> Unit = {
+                            CollectionDetailsHeader(
+                                collection = state.collection!!,
+                                showLogo = preferences.appPreferences.interfacePreferences.showLogos,
+                                logoImageUrl = state.logoImageUrl,
+                                overviewOnClick = overviewOnClick,
+                                bringIntoViewRequester = bringIntoViewRequester,
+                                modifier =
+                                    Modifier
+                                        .fillMaxWidth()
+                                        .padding(
+                                            top = if (glass) 0.dp else HeaderUtils.topPadding,
+                                            bottom = if (glass) 16.dp else HeaderUtils.bottomPadding,
+                                        ).then(if (glass) Modifier else Modifier.height(HeaderUtils.height)),
+                            )
+                        }
+                        val buttons: @Composable () -> Unit = {
+                            CollectionButtons(
+                                state = state,
+                                onSortChange = onSortChange,
+                                onClickPlayAll = onClickPlayAll,
+                                onFilterChange = onFilterChange,
+                                getPossibleFilterValues = getPossibleFilterValues,
+                                onClickViewOptions = onClickViewOptions,
+                                favoriteOnClick = favoriteOnClick,
+                                onConfirmDelete = onConfirmDelete,
+                                canDelete = canDelete,
+                                moreOnClick = moreOnClick,
+                                modifier =
+                                    Modifier
+                                        .focusRequester(focusRequester)
+                                        .fillMaxWidth(),
+                            )
+                        }
+                        if (glass) {
+                            // The same pane as the movie and series pages. A collection is
+                            // exactly where bare copy fails: the header follows the members, so
+                            // it sits over whatever poster the focus landed on, and white type
+                            // over a bright one (a white star on a red shield) is unreadable.
+                            //
+                            // The actions travel with the copy, as they do on a movie: outside
+                            // the pane they started further left than the title, so the page had
+                            // two left edges a few dp apart.
+                            Box(
+                                modifier =
+                                    Modifier
+                                        .fillMaxWidth()
+                                        .padding(horizontal = GlassTokens.screenInset, vertical = 4.dp),
+                            ) {
+                                GlassPanel(
+                                    modifier = Modifier.fillMaxWidth(0.66f),
+                                    scrim = 1f,
+                                ) {
+                                    Column(Modifier.padding(horizontal = 20.dp, vertical = 18.dp)) {
+                                        headerContent()
+                                        buttons()
+                                    }
+                                }
+                            }
+                        } else {
+                            headerContent()
+                            buttons()
+                        }
                     }
                 }
             }

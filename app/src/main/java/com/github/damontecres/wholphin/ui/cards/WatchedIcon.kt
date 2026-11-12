@@ -16,6 +16,7 @@ import androidx.tv.material3.Icon
 import androidx.tv.material3.MaterialTheme
 import com.github.damontecres.wholphin.preferences.AppThemeColors
 import com.github.damontecres.wholphin.ui.PreviewTvSpec
+import com.github.damontecres.wholphin.ui.theme.LocalLiquidGlass
 import com.github.damontecres.wholphin.ui.theme.LocalTheme
 import com.github.damontecres.wholphin.ui.theme.WholphinTheme
 
@@ -37,8 +38,12 @@ fun WatchedIcon(
 }
 
 @Composable
-fun WatchedIconBackground(): Color =
-    when (LocalTheme.current) {
+fun WatchedIconBackground(): Color {
+    // The glass scheme's `border` is white so that cards and chips read as lit edges, which is
+    // not a fill: used as one it produced a white disc. The badge takes the material's white
+    // instead, and its tick goes dark (below).
+    if (LocalLiquidGlass.current) return Color.White
+    return when (LocalTheme.current) {
         AppThemeColors.UNRECOGNIZED,
         AppThemeColors.PURPLE,
         AppThemeColors.BLUE,
@@ -51,10 +56,14 @@ fun WatchedIconBackground(): Color =
 
         AppThemeColors.OLED_BLACK -> MaterialTheme.colorScheme.secondaryContainer
     }
+}
 
 @Composable
-fun WatchedIconColor(): Color =
-    when (LocalTheme.current) {
+fun WatchedIconColor(): Color {
+    // White-on-white was invisible: a watched poster grew a blank dot instead of a tick. The
+    // white disc with dark glyph is the same signal as a selected bar pill.
+    if (LocalLiquidGlass.current) return Color.Black
+    return when (LocalTheme.current) {
         AppThemeColors.UNRECOGNIZED,
         AppThemeColors.PURPLE,
         AppThemeColors.BLUE,
@@ -66,6 +75,7 @@ fun WatchedIconColor(): Color =
         AppThemeColors.BROWN,
         -> Color.White // MaterialTheme.colorScheme.onSurface
     }
+}
 
 @PreviewTvSpec
 @Composable

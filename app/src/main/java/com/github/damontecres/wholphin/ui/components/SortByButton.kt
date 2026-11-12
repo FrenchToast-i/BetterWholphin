@@ -12,6 +12,8 @@ import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.text.SpanStyle
 import androidx.compose.ui.text.buildAnnotatedString
 import androidx.compose.ui.text.withStyle
+import androidx.compose.ui.unit.dp
+import androidx.tv.material3.LocalTextStyle
 import androidx.tv.material3.Text
 import com.github.damontecres.wholphin.R
 import com.github.damontecres.wholphin.data.filter.DiscoverSort
@@ -20,6 +22,8 @@ import com.github.damontecres.wholphin.ui.FontAwesome
 import com.github.damontecres.wholphin.ui.data.SortAndDirection
 import com.github.damontecres.wholphin.ui.data.flip
 import com.github.damontecres.wholphin.ui.data.getStringRes
+import com.github.damontecres.wholphin.ui.theme.GlassType
+import com.github.damontecres.wholphin.ui.theme.LocalLiquidGlass
 import org.jellyfin.sdk.model.api.ItemSortBy
 import org.jellyfin.sdk.model.api.SortOrder
 
@@ -38,6 +42,7 @@ fun SortByButton(
     val currentSort = current.sort
     val currentDirection = current.direction
     var sortByDropDown by remember { mutableStateOf(false) }
+    val glass = LocalLiquidGlass.current
 
     Box(modifier = modifier) {
         TextButton(
@@ -45,14 +50,17 @@ fun SortByButton(
             onLongClick = {
                 onSortChange.invoke(current.flip())
             },
+            glassFilled = glass,
         ) {
             Text(
                 text = current.toAnnotatedString(),
+                style = if (glass) GlassType.button else LocalTextStyle.current,
             )
         }
 
         DropdownMenu(
             expanded = sortByDropDown,
+            containerColor = glassMenuColor(3.dp),
             onDismissRequest = { sortByDropDown = false },
         ) {
             sortOptions
@@ -129,6 +137,7 @@ fun DiscoverSortByButton(
     val currentSort = current.sort
     val currentDirection = current.direction
     var sortByDropDown by remember { mutableStateOf(false) }
+    val glass = LocalLiquidGlass.current
 
     Box(modifier = modifier) {
         TextButton(
@@ -136,14 +145,17 @@ fun DiscoverSortByButton(
             onLongClick = {
                 onSortChange.invoke(current.flip())
             },
+            glassFilled = glass,
         ) {
             Text(
                 text = current.toAnnotatedString(),
+                style = if (glass) GlassType.button else LocalTextStyle.current,
             )
         }
 
         DropdownMenu(
             expanded = sortByDropDown,
+            containerColor = glassMenuColor(3.dp),
             onDismissRequest = { sortByDropDown = false },
         ) {
             sortOptions

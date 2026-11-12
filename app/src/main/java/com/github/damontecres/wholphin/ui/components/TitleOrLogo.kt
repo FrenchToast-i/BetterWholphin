@@ -15,6 +15,7 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextOverflow
+import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.dp
 import androidx.tv.material3.MaterialTheme
 import androidx.tv.material3.Text
@@ -31,26 +32,38 @@ fun TitleOrLogo(
     logoImageUrl: String?,
     showLogo: Boolean,
     modifier: Modifier = Modifier,
+    logoHeight: Dp = HeaderUtils.logoHeight,
 ) {
-    var imageError by remember { mutableStateOf(false) }
+    // Keyed on the URL: without this, one logo that failed to load disabled every following
+    // item's logo in the same header, because the state survived the item change.
+    var imageError by remember(logoImageUrl) { mutableStateOf(false) }
+    var imageLoaded by remember(logoImageUrl) { mutableStateOf(false) }
     Box(
-        modifier = modifier.heightIn(max = HeaderUtils.logoHeight),
+        modifier = modifier.heightIn(max = logoHeight),
     ) {
+        // The title is drawn underneath while the logo is still in flight. A header that only
+        // swaps text for an image draws an empty band on a slow connection — the pane looked
+        // like it had lost its title entirely until Coil answered.
+        if (showLogo && logoImageUrl != null && !imageError && !imageLoaded) {
+            Title(title, Modifier)
+        }
         if (showLogo && logoImageUrl != null && !imageError) {
             AsyncImage(
                 model = logoImageUrl,
                 contentDescription = title,
                 contentScale = ContentScale.Fit,
+                onSuccess = { imageLoaded = true },
                 onError = {
                     logCoilError(logoImageUrl, it.result)
                     imageError = true
                 },
                 modifier =
                     Modifier
-                        .height(HeaderUtils.logoHeight)
+                        .height(logoHeight)
                         .widthIn(max = 320.dp),
             )
         } else {
+            // No logo, logos switched off, or the image failed: the title is the header.
             Title(title, Modifier)
         }
     }
@@ -115,16 +128,21 @@ fun SimpleTitleOrLogo(
     modifier: Modifier = Modifier,
 ) {
     val logoImageUrl = rememberLogoUrl(item)
-    var imageError by remember { mutableStateOf(false) }
+    var imageError by remember(logoImageUrl) { mutableStateOf(false) }
+    var imageLoaded by remember(logoImageUrl) { mutableStateOf(false) }
     Box(
         contentAlignment = Alignment.Center,
         modifier = modifier,
     ) {
+        if (showLogo && logoImageUrl != null && !imageError && !imageLoaded) {
+            Title(item?.title, Modifier)
+        }
         if (showLogo && logoImageUrl != null && !imageError) {
             AsyncImage(
                 model = logoImageUrl,
                 contentDescription = item?.title,
                 contentScale = ContentScale.Fit,
+                onSuccess = { imageLoaded = true },
                 onError = {
                     logCoilError(logoImageUrl, it.result)
                     imageError = true

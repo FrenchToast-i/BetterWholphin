@@ -5,6 +5,7 @@ import android.graphics.Bitmap
 import android.util.LruCache
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.isSpecified
+import androidx.compose.ui.graphics.luminance
 import androidx.core.graphics.drawable.toBitmap
 import androidx.datastore.core.DataStore
 import androidx.palette.graphics.Palette
@@ -45,6 +46,7 @@ class BackdropService
         @param:ApplicationContext private val context: Context,
         private val imageUrlService: ImageUrlService,
         private val preferences: DataStore<AppPreferences>,
+        private val accountPreferences: AccountPreferencesService,
     ) {
         private val extractedColorCache = LruCache<String, ExtractedColors>(50)
 
@@ -102,20 +104,28 @@ class BackdropService
             imageUrl: String?,
         ) {
             delay(500)
-            val backdropStyle =
+            val interfacePreferences =
                 preferences.data
                     .firstOrNull()
                     ?.interfacePreferences
-                    ?.backdropStyle
+            // Glass is per account, so the artwork luminance has to follow this profile's
+            // resolved switch rather than the device default. A profile that turned glass on
+            // would otherwise never get the pale-frame measurement its panes rely on.
+            val accountGlass = accountPreferences.current.firstOrNull()?.liquidGlass
+            val backdropStyle = interfacePreferences?.backdropStyle
             val dynamicEnabled =
                 backdropStyle == BackdropStyle.BACKDROP_DYNAMIC_COLOR ||
                     backdropStyle == BackdropStyle.UNRECOGNIZED
-            val colors =
-                if (dynamicEnabled) {
+            // Liquid Glass needs the artwork's own luminance even when the palette is off: a copy
+            // pane decides its smoke from whether the frame behind it is pale. The decode is only
+            // skipped when neither feature is going to use it.
+            val extracted =
+                if (dynamicEnabled || (accountGlass ?: interfacePreferences?.liquidGlass) == true) {
                     extractColorsFromBackdrop(imageUrl)
                 } else {
-                    ExtractedColors.DEFAULT
+                    null
                 }
+            val colors = if (dynamicEnabled) extracted else null
             _backdropFlow.update {
                 if (it.itemId == itemId) {
                     BackdropResult(
@@ -124,6 +134,8 @@ class BackdropService
                         primaryColor = colors?.primary ?: it.primaryColor,
                         secondaryColor = colors?.secondary ?: it.secondaryColor,
                         tertiaryColor = colors?.tertiary ?: it.tertiaryColor,
+                        isPale = extracted?.isPale ?: false,
+                        luminance = extracted?.luminance ?: 0f,
                     )
                 } else {
                     it
@@ -185,6 +197,31 @@ class BackdropService
         ): Color = swatch?.rgb?.let(::Color)?.copy(alpha = alpha) ?: Color.Transparent
 
         /**
+         * Mean luminance of a bitmap, sampled on a coarse grid.
+         *
+         * Reading every pixel of a 1080p backdrop costs more than it is worth; a few thousand
+         * samples already answer the only question the material asks — is this frame pale enough
+         * that clear glass would turn into a white pane?
+         */
+        private fun Bitmap.averageLuminance(): Float {
+            val stepX = maxOf(1, width / 48)
+            val stepY = maxOf(1, height / 27)
+            var sum = 0.0
+            var count = 0
+            var y = 0
+            while (y < height) {
+                var x = 0
+                while (x < width) {
+                    sum += Color(getPixel(x, y)).luminance()
+                    count++
+                    x += stepX
+                }
+                y += stepY
+            }
+            return if (count > 0) (sum / count).toFloat() else 0f
+        }
+
+        /**
          * Extracts colors from a bitmap using Android's Palette API.
          *
          * - Primary (Bottom-Right): darkVibrant -> darkMuted -> default
@@ -205,6 +242,12 @@ class BackdropService
                 val darkMuted = palette.darkMutedSwatch
                 val lightMuted = palette.lightMutedSwatch
                 val dominant = palette.dominantSwatch
+                // Whether the artwork can hold white type is a question about the whole frame,
+                // not about its accent colours: sample the bitmap itself. The mean is kept as a
+                // number rather than only as the pale/dark flag, because the material's smoke is
+                // a ramp: a mid-grey frame needs a little, and a white one needs a lot.
+                val luminance = bitmap.averageLuminance()
+                val isPale = luminance > PALE_LUMINANCE
 
                 // Primary (Bottom-Right)
                 val primaryColor = toColor(darkVibrant ?: darkMuted, .4f)
@@ -225,12 +268,14 @@ class BackdropService
                 val tertiaryColor = toColor(vibrant ?: lightVibrant, .35f)
 
                 Timber.v(
-                    "Colors extracted: primary=%s, secondary=%s, tertiary=%s",
+                    "Colors extracted: primary=%s, secondary=%s, tertiary=%s, dominant=%s, luminance=%s",
                     primaryColor,
                     secondaryColor,
                     tertiaryColor,
+                    dominant?.rgb,
+                    luminance,
                 )
-                ExtractedColors(primaryColor, secondaryColor, tertiaryColor)
+                ExtractedColors(primaryColor, secondaryColor, tertiaryColor, isPale, luminance)
             } catch (e: Exception) {
                 Timber.e(e, "Error extracting palette colors")
                 ExtractedColors.DEFAULT
@@ -241,6 +286,9 @@ class BackdropService
         }
     }
 
+/** Above this the frame is bright enough that clear glass turns into a white pane. */
+private const val PALE_LUMINANCE = 0.55f
+
 /**
  * The result from determining the backdrop URL and extracted colors for the dynamic backdrop
  */
@@ -250,6 +298,15 @@ data class BackdropResult(
     val primaryColor: Color = Color.Unspecified,
     val secondaryColor: Color = Color.Unspecified,
     val tertiaryColor: Color = Color.Unspecified,
+    /** Whether the artwork itself is light enough that clear glass would hold white labels. */
+    val isPale: Boolean = false,
+    /**
+     * Mean luminance of the artwork, 0–1.
+     *
+     * The material uses the number rather than only the flag: smoke is a ramp, because a frame
+     * at mid-grey still eats white labels through clear glass, just less than a white one does.
+     */
+    val luminance: Float = 0f,
 ) {
     val hasColors: Boolean =
         primaryColor.isSpecified ||
@@ -272,6 +329,8 @@ data class ExtractedColors(
     val primary: Color,
     val secondary: Color,
     val tertiary: Color,
+    val isPale: Boolean = false,
+    val luminance: Float = 0f,
 ) {
     companion object {
         val DEFAULT = ExtractedColors(Color.Unspecified, Color.Unspecified, Color.Unspecified)

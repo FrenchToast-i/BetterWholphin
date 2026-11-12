@@ -4,6 +4,7 @@ import android.view.KeyEvent
 import androidx.annotation.StringRes
 import androidx.compose.foundation.ExperimentalFoundationApi
 import androidx.compose.foundation.background
+import androidx.compose.foundation.clickable
 import androidx.compose.foundation.focusGroup
 import androidx.compose.foundation.gestures.BringIntoViewSpec
 import androidx.compose.foundation.gestures.LocalBringIntoViewSpec
@@ -11,12 +12,15 @@ import androidx.compose.foundation.interaction.MutableInteractionSource
 import androidx.compose.foundation.interaction.collectIsFocusedAsState
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
+import androidx.compose.foundation.layout.BoxWithConstraints
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.PaddingValues
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
+import androidx.compose.foundation.layout.fillMaxHeight
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
+import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
@@ -27,6 +31,7 @@ import androidx.compose.foundation.lazy.grid.rememberLazyGridState
 import androidx.compose.foundation.lazy.layout.LazyLayoutCacheWindow
 import androidx.compose.foundation.lazy.rememberLazyListState
 import androidx.compose.foundation.shape.CircleShape
+import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.CompositionLocalProvider
 import androidx.compose.runtime.LaunchedEffect
@@ -56,9 +61,11 @@ import androidx.compose.ui.input.key.type
 import androidx.compose.ui.layout.onLayoutRectChanged
 import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.res.stringResource
+import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.dp
+import androidx.compose.ui.unit.sp
 import androidx.tv.material3.Button
 import androidx.tv.material3.ButtonDefaults
 import androidx.tv.material3.LocalContentColor
@@ -71,6 +78,11 @@ import com.github.damontecres.wholphin.ui.ifElse
 import com.github.damontecres.wholphin.ui.playback.isBackwardButton
 import com.github.damontecres.wholphin.ui.playback.isForwardButton
 import com.github.damontecres.wholphin.ui.playback.isPlayKeyUp
+import com.github.damontecres.wholphin.ui.theme.GlassTokens
+import com.github.damontecres.wholphin.ui.theme.glassCapsule
+import com.github.damontecres.wholphin.ui.theme.glassSurface
+import com.github.damontecres.wholphin.ui.theme.GlassType
+import com.github.damontecres.wholphin.ui.theme.LocalLiquidGlass
 import com.github.damontecres.wholphin.ui.tryRequestFocus
 import com.github.damontecres.wholphin.util.ExceptionHandler
 import com.github.damontecres.wholphin.util.WholphinDispatchers
@@ -236,12 +248,7 @@ fun <T : CardGridItem> CardGrid(
             contentAlignment = Alignment.Center,
             modifier = modifier.fillMaxSize(),
         ) {
-            Text(
-                text = stringResource(R.string.no_results),
-                style = MaterialTheme.typography.titleLarge,
-                color = MaterialTheme.colorScheme.onSurface,
-                textAlign = TextAlign.Center,
-            )
+            EmptyGridMessage()
         }
     } else {
         var longPressing by remember { mutableStateOf(false) }
@@ -396,11 +403,7 @@ fun <T : CardGridItem> CardGrid(
                     if (pager.isEmpty()) {
 //                focusedIndex = -1
                         Box(modifier = Modifier.fillMaxSize()) {
-                            Text(
-                                text = stringResource(R.string.no_results),
-                                color = MaterialTheme.colorScheme.onBackground,
-                                modifier = Modifier.align(Alignment.Center),
-                            )
+                            EmptyGridMessage(modifier = Modifier.align(Alignment.Center))
                         }
                     }
                     if (showFooter) {
@@ -460,7 +463,7 @@ fun <T : CardGridItem> CardGrid(
                 Spacer(
                     Modifier
                         .padding(start = 16.dp)
-                        .width(letterHorizontalPadding * 2 + letterButtonSize),
+                        .width(alphabetRailWidth()),
                 )
             }
         }
@@ -469,6 +472,30 @@ fun <T : CardGridItem> CardGrid(
 
 private val letterHorizontalPadding = 2.dp
 private val letterButtonSize = 14.dp
+
+/**
+ * Height of a letter cell in the glass rail.
+ *
+ * Tall enough that a 12sp capital has air around it, and the rail lays the alphabet out in two
+ * columns so all 27 letters fit a television page without scrolling. One column of 27 cells came
+ * to 444dp, which is taller than the grid area, so the rail used to end mid-alphabet at T and the
+ * half that was left read as a clipping fault.
+ */
+private val glassLetterCell = 18.dp
+
+/** Width of the glass rail itself: two letter columns and their gutters. */
+private val glassAlphabetWidth = 46.dp
+
+/** Fallback cap when the rail has no bounded height to measure against. */
+private val glassAlphabetFallbackHeight = 340.dp
+
+/**
+ * Width the alphabet rail occupies, so a grid reserves the same gutter whether the rail is
+ * currently shown or not. Without this the cards resize the moment the letters appear.
+ */
+@Composable
+internal fun alphabetRailWidth(): Dp =
+    if (LocalLiquidGlass.current) glassAlphabetWidth else letterHorizontalPadding * 2 + letterButtonSize
 
 @Composable
 fun JumpButtons(
@@ -512,6 +539,22 @@ fun AlphabetButtons(
     letterClicked: (Char) -> Unit,
     modifier: Modifier = Modifier,
 ) {
+    if (LocalLiquidGlass.current) {
+        // The rail used to fill whatever height its row reported, and on a grid page that row is
+        // the whole page area: 27 cells came out 400dp tall and the capsule ran off the bottom
+        // edge of the television. Measuring the space actually available lets the capsule end
+        // where the page does and turn the rest into a scroll.
+        BoxWithConstraints(modifier = modifier) {
+            GlassAlphabetRail(
+                letters = letters,
+                currentLetter = currentLetter,
+                letterClicked = letterClicked,
+                availableHeight = maxHeight,
+            )
+        }
+        return
+    }
+
     val scope = rememberCoroutineScope()
     val listState = rememberLazyListState()
 
@@ -616,5 +659,157 @@ fun AlphabetButtons(
                 }
             }
         }
+    }
+}
+
+/**
+ * The alphabet jump rail as a slim capsule of glass.
+ *
+ * The classic rail is bare type at 25% white, which on a busy poster wall reads as stray letters
+ * rather than as a control. Glass gives the rail an edge and something to refract, and the
+ * letters gain real contrast: the current letter is white, the rest sit back, and the letter the
+ * D-pad is on takes a white capsule so focus is unmistakable without an outline.
+ *
+ * Two columns rather than one: 27 cells at a legible size are taller than a television's grid
+ * area, and a rail that ends at T with the rest scrolled away reads as a bug. Splitting it down
+ * the middle fits every letter with air around it and needs no scrolling at all, so the rail is
+ * always the same shape and the current letter is always on screen.
+ */
+@Composable
+private fun GlassAlphabetRail(
+    letters: String,
+    currentLetter: Char,
+    letterClicked: (Char) -> Unit,
+    availableHeight: Dp,
+    modifier: Modifier = Modifier,
+) {
+    val currentIndex = remember(letters, currentLetter) { letters.indexOf(currentLetter) }
+    val focusRequesters = remember(letters) { List(letters.length) { FocusRequester() } }
+    val interactionSources = remember(letters) { List(letters.length) { MutableInteractionSource() } }
+    // Column-major on purpose — A–M in the first column, N–Z in the second — so the rail still
+    // reads as one alphabet rather than as an A/B, C/D … table.
+    val rows = remember(letters) { (letters.length + 1) / 2 }
+    val columns = remember(letters, rows) { listOf(letters.take(rows), letters.drop(rows)) }
+
+    // Never taller than the space the page actually offers; on a short window the cells shrink
+    // rather than the rail running off the bottom of the screen.
+    val boundedHeight =
+        if (availableHeight.value.isFinite()) availableHeight else glassAlphabetFallbackHeight
+    val cell =
+        minOf(glassLetterCell, (boundedHeight - 12.dp) / rows)
+            .coerceAtLeast(11.dp)
+    val fontSize = (cell.value * 0.72f).coerceIn(9f, 12f).sp
+    val railHeight = cell * rows + 12.dp
+    // Each column gets half the rail. `fillMaxWidth` inside a Column takes the whole row's
+    // constraint, so the two columns would each claim the full width and the second one would
+    // hang off the right edge of the television.
+    val columnWidth = (glassAlphabetWidth - 8.dp) / 2
+
+    Row(
+        horizontalArrangement = Arrangement.Center,
+        verticalAlignment = Alignment.CenterVertically,
+        modifier =
+            modifier
+                .width(glassAlphabetWidth)
+                .height(railHeight)
+                .glassCapsule()
+                .focusProperties {
+                    onEnter = {
+                        focusRequesters[currentIndex.coerceIn(0, letters.length - 1)]
+                            .tryRequestFocus()
+                    }
+                },
+    ) {
+        columns.forEach { column ->
+            Column(horizontalAlignment = Alignment.CenterHorizontally) {
+                column.forEach { letter ->
+                    val index = letters.indexOf(letter)
+                    val isCurrent = letter == currentLetter
+                    val focused by interactionSources[index].collectIsFocusedAsState()
+                    Box(
+                        modifier =
+                            Modifier
+                                .width(columnWidth)
+                                .height(cell)
+                                .padding(horizontal = 1.dp)
+                                .clip(RoundedCornerShape(percent = 50))
+                                .background(
+                                    when {
+                                        focused -> Color.White
+                                        isCurrent -> Color.White.copy(alpha = 0.16f)
+                                        else -> Color.Transparent
+                                    },
+                                ).focusRequester(focusRequesters[index])
+                                .clickable(
+                                    interactionSource = interactionSources[index],
+                                    indication = null,
+                                ) {
+                                    letterClicked(letter)
+                                },
+                        contentAlignment = Alignment.Center,
+                    ) {
+                        Text(
+                            text = letter.toString(),
+                            color =
+                                when {
+                                    focused -> Color.Black
+                                    isCurrent -> Color.White
+                                    else -> Color.White.copy(alpha = 0.58f)
+                                },
+                            fontSize = fontSize,
+                            fontWeight =
+                                if (focused || isCurrent) {
+                                    FontWeight.SemiBold
+                                } else {
+                                    FontWeight.Medium
+                                },
+                            textAlign = TextAlign.Center,
+                            modifier = Modifier.fillMaxWidth(),
+                        )
+                    }
+                }
+            }
+        }
+    }
+}
+
+/**
+ * The "nothing here" line, as a pane of the material rather than white type on the artwork.
+ *
+ * A grid page has no letterbox behind it, so a bare sentence is drawn against whatever the
+ * backdrop happens to be — and a pale cartoon frame turns white type into a ghost. The copy
+ * pane is the material's own answer: clear over dark art, smoked over a light frame, the same
+ * rule the detail sheets follow. It also gives the message an edge, so an empty page reads as
+ * deliberately empty rather than as a page that failed to draw.
+ */
+@Composable
+private fun EmptyGridMessage(modifier: Modifier = Modifier) {
+    val glass = LocalLiquidGlass.current
+    Box(
+        modifier =
+            modifier
+                .then(
+                    if (glass) {
+                        // Not a content pane: this is the only copy on an otherwise empty page,
+                        // so it takes a fixed smoke rather than the artwork ramp. The ramp leaves
+                        // a mostly clear pill over a bright frame, and white type on it — the
+                        // exact failure the smoke exists to prevent.
+                        Modifier.glassSurface(
+                            shape = RoundedCornerShape(24.dp),
+                            tint = GlassTokens.emptyStateTint,
+                            scrim = 1f,
+                        )
+                    } else {
+                        Modifier
+                    },
+                ).padding(horizontal = 30.dp, vertical = 18.dp),
+        contentAlignment = Alignment.Center,
+    ) {
+        Text(
+            text = stringResource(R.string.no_results),
+            style = if (glass) GlassType.rowTitle else MaterialTheme.typography.titleLarge,
+            color = if (glass) Color.White.copy(alpha = 0.92f) else MaterialTheme.colorScheme.onSurface,
+            textAlign = TextAlign.Center,
+        )
     }
 }

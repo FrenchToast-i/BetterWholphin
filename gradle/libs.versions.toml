@@ -1,6 +1,8 @@
 [versions]
 aboutLibraries = "15.3.0"
 acra = "5.14.2"
+# KMPLiquidGlass: the liquid glass material used by Liquid Glass mode
+backdrop = "0.0.1-alpha02"
 agp = "9.5.0"
 auto-service = "1.1.1"
 autoServiceKsp = "1.2.0"
@@ -139,6 +141,7 @@ androidx-lifecycle-viewmodel-navigation3 = { module = "androidx.lifecycle:lifecy
 androidx-material3-adaptive-navigation3 = { group = "androidx.compose.material3.adaptive", name = "adaptive-navigation3", version.ref = "material3AdaptiveNav3" }
 
 androidx-room-common-jvm = { group = "androidx.room", name = "room-common-jvm", version.ref = "room" }
+backdrop = { module = "io.github.kashif-mehmood-km:backdrop", version.ref = "backdrop" }
 androidx-room-ktx = { group = "androidx.room", name = "room-ktx", version.ref = "room" }
 androidx-room-compiler = { module = "androidx.room:room-compiler", version.ref = "room" }
 

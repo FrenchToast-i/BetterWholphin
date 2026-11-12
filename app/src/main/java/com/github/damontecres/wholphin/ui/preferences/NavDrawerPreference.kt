@@ -245,6 +245,10 @@ fun NavDrawerPreferenceListItem(
                     )
                 },
                 onClick = onClick,
+                colors = glassListItemColors(),
+                shape = glassListItemShape(),
+                scale = glassListItemScale(),
+                glow = glassListItemGlow(),
                 modifier = Modifier.weight(1f),
             )
             Row(

@@ -31,6 +31,7 @@ import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.res.pluralStringResource
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.text.style.TextOverflow
+import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.dp
 import androidx.hilt.lifecycle.viewmodel.compose.hiltViewModel
 import androidx.lifecycle.ViewModel
@@ -68,7 +69,10 @@ import com.github.damontecres.wholphin.ui.isNotNullOrBlank
 import com.github.damontecres.wholphin.ui.launchIO
 import com.github.damontecres.wholphin.ui.nav.Destination
 import com.github.damontecres.wholphin.ui.rememberPosition
+import com.github.damontecres.wholphin.ui.theme.GlassTokens
+import com.github.damontecres.wholphin.ui.theme.LocalLiquidGlass
 import com.github.damontecres.wholphin.ui.theme.WholphinTheme
+import com.github.damontecres.wholphin.ui.theme.glassSurface
 import com.github.damontecres.wholphin.ui.tryRequestFocus
 import com.github.damontecres.wholphin.ui.util.ResStringProvider
 import com.github.damontecres.wholphin.util.ApiRequestPager
@@ -512,9 +516,21 @@ fun PersonHeader(
 //                    .fillMaxWidth(.7f)
                     .weight(3f)
                     .padding(top = 16.dp, end = 32.dp)
-                    .background(
-                        MaterialTheme.colorScheme.surfaceColorAtElevation(1.dp),
-                        RoundedCornerShape(10),
+                    .then(
+                        // A biography is a page of copy: in glass mode it belongs on the same
+                        // pane as every other block of copy, not on an opaque card that looks
+                        // like a hole punched in the artwork.
+                        if (LocalLiquidGlass.current) {
+                            Modifier.glassSurface(
+                                shape = GlassTokens.panelShape,
+                                scrim = 1f,
+                            )
+                        } else {
+                            Modifier.background(
+                                MaterialTheme.colorScheme.surfaceColorAtElevation(1.dp),
+                                RoundedCornerShape(10),
+                            )
+                        },
                     ).padding(16.dp),
         ) {
             Text(
@@ -593,6 +609,9 @@ fun PersonHeader(
                 maxLines = 3,
                 onClick = overviewOnClick,
                 interactionSource = interactionSource,
+                // Glass type is taller than the classic 20dp line, so a fixed box would clip the
+                // third line and leave the ellipsis alone underneath it.
+                textBoxHeight = Dp.Unspecified,
                 modifier = Modifier.padding(top = 8.dp),
             )
             ExpandableFaButton(

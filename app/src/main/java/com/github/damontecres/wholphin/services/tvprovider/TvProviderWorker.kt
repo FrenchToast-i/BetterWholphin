@@ -3,6 +3,7 @@ package com.github.damontecres.wholphin.services.tvprovider
 import android.content.ContentUris
 import android.content.Context
 import android.content.Intent
+import android.content.SharedPreferences
 import android.database.Cursor
 import android.net.Uri
 import androidx.core.content.edit
@@ -255,7 +256,7 @@ class TvProviderWorker
 
         private suspend fun addOtherChannels() {
             val preferences = preferences.data.firstOrNull()
-            val channelsPrefs = context.getSharedPreferences("channels", Context.MODE_PRIVATE)
+            val channelsPrefs = context.getSharedPreferences(CHANNELS_PREFS, Context.MODE_PRIVATE)
 
             val latest =
                 api.userLibraryApi
@@ -274,46 +275,76 @@ class TvProviderWorker
                     ).content
                     .map { BaseItem(it, true) }
 
-            var channelId = channelsPrefs.getString("latest", null)?.toUri()
-            if (channelId == null) {
-                Timber.d("channelId for latest is null")
-                val channel =
-                    Channel
-                        .Builder()
-                        .apply {
-                            setDisplayName(context.getString(R.string.recently_added))
-                            setType(Channels.TYPE_PREVIEW)
-                            setAppLinkIntent(Intent(context, MainActivity::class.java))
-                        }.build()
-                channelId =
-                    context.contentResolver.insert(
-                        Channels.CONTENT_URI,
-                        channel.toContentValues(),
-                    )
-                if (channelId != null) {
-                    channelsPrefs.edit(true) {
-                        putString("latest", channelId.toString())
-                    }
-                    TvContractCompat.requestChannelBrowsable(
-                        context,
-                        ContentUris.parseId(channelId),
-                    )
-                } else {
-                    Timber.w("channelId was null")
-                    throw IllegalStateException("channelId was null")
-                }
-            }
-            val programs = latest.map { convert(channelId, it).toContentValues() }.toTypedArray()
+            // The channel id is cached across runs, but a channel outlives neither the viewer
+            // removing the row nor the launcher dropping the app's channels. Publishing against
+            // a dead id fails the program inserts (a foreign key error), and a cached id that is
+            // never re-checked turns that into a permanent failure: the recently added row
+            // disappeared for good the first time somebody tidied their home screen.
+            repeat(CHANNEL_ATTEMPTS) { attempt ->
+                val channelId = resolveLatestChannel(channelsPrefs)
+                val programs = latest.map { convert(channelId, it).toContentValues() }.toTypedArray()
 
-            // Delete & replace
-            context.contentResolver.delete(TvContractCompat.PreviewPrograms.CONTENT_URI, null, null)
-            val count =
-                context.contentResolver.bulkInsert(
-                    TvContractCompat.PreviewPrograms.CONTENT_URI,
-                    programs,
-                )
-            Timber.v("Inserted $count records")
+                // Delete & replace
+                context.contentResolver.delete(TvContractCompat.PreviewPrograms.CONTENT_URI, null, null)
+                val count =
+                    context.contentResolver.bulkInsert(
+                        TvContractCompat.PreviewPrograms.CONTENT_URI,
+                        programs,
+                    )
+                Timber.v("Inserted $count records")
+                if (count > 0 || programs.isEmpty() || attempt == CHANNEL_ATTEMPTS - 1) {
+                    return
+                }
+                // The channel went away between the check and the insert. Forget it and rebuild
+                // once rather than reporting a failure that has no bearing on the next run.
+                Timber.w("No preview programs inserted, rebuilding the recently added channel")
+                channelsPrefs.edit(true) { remove(KEY_LATEST_CHANNEL) }
+            }
         }
+
+        /**
+         * The channel the recently added programs hang off, created on first use and recreated if
+         * the copy remembered in preferences no longer exists.
+         */
+        private fun resolveLatestChannel(channelsPrefs: SharedPreferences): Uri {
+            val cached = channelsPrefs.getString(KEY_LATEST_CHANNEL, null)
+            if (cached != null) {
+                val cachedUri = cached.toUri()
+                if (channelExists(cachedUri)) {
+                    return cachedUri
+                }
+                Timber.d("Cached channel no longer exists, recreating")
+                channelsPrefs.edit(true) { remove(KEY_LATEST_CHANNEL) }
+            }
+
+            val channel =
+                Channel
+                    .Builder()
+                    .apply {
+                        setDisplayName(context.getString(R.string.recently_added))
+                        setType(Channels.TYPE_PREVIEW)
+                        setAppLinkIntent(Intent(context, MainActivity::class.java))
+                    }.build()
+            val channelId =
+                context.contentResolver.insert(
+                    Channels.CONTENT_URI,
+                    channel.toContentValues(),
+                ) ?: throw IllegalStateException("channelId was null")
+            channelsPrefs.edit(true) {
+                putString(KEY_LATEST_CHANNEL, channelId.toString())
+            }
+            TvContractCompat.requestChannelBrowsable(
+                context,
+                ContentUris.parseId(channelId),
+            )
+            return channelId
+        }
+
+        private fun channelExists(channelUri: Uri): Boolean =
+            context.contentResolver
+                .query(channelUri, arrayOf(Channels._ID), null, null, null)
+                ?.use { it.count > 0 }
+                ?: false
 
         private fun convert(
             channelId: Uri,
@@ -394,6 +425,14 @@ class TvProviderWorker
             const val WORK_NAME = "com.github.damontecres.wholphin.services.tvprovider.TvProviderWorker"
             const val PARAM_USER_ID = "userId"
             const val PARAM_SERVER_ID = "serverId"
+
+            private const val CHANNELS_PREFS = "channels"
+            private const val KEY_LATEST_CHANNEL = "latest"
+
+            /**
+             * One rebuild of a vanished channel, then give up: a second failure is not a stale id.
+             */
+            private const val CHANNEL_ATTEMPTS = 2
         }
     }
 

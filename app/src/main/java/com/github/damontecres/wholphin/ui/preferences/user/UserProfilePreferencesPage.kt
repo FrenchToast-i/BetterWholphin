@@ -30,6 +30,7 @@ import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.focus.FocusRequester
 import androidx.compose.ui.focus.focusRequester
 import androidx.compose.ui.focus.onFocusChanged
@@ -54,6 +55,10 @@ import com.github.damontecres.wholphin.ui.preferences.ChoicePreference
 import com.github.damontecres.wholphin.ui.preferences.ClickPreference
 import com.github.damontecres.wholphin.ui.preferences.ComposablePreference
 import com.github.damontecres.wholphin.ui.preferences.PreferenceValidation
+import com.github.damontecres.wholphin.ui.preferences.glassPreferenceRow
+import com.github.damontecres.wholphin.ui.theme.GlassTokens
+import com.github.damontecres.wholphin.ui.theme.GlassType
+import com.github.damontecres.wholphin.ui.theme.LocalLiquidGlass
 import com.github.damontecres.wholphin.ui.tryRequestFocus
 import org.jellyfin.sdk.model.api.SubtitlePlaybackMode
 import timber.log.Timber
@@ -65,8 +70,11 @@ import timber.log.Timber
  */
 @Composable
 fun UserProfilePreferencesPage(modifier: Modifier = Modifier) {
+    val glass = LocalLiquidGlass.current
     Box(
-        modifier = modifier.background(MaterialTheme.colorScheme.background),
+        // Glass keeps the artwork behind the sheet; painting the theme background here would
+        // replace the material with an opaque slab, exactly as it did on the main settings page.
+        modifier = if (glass) modifier else modifier.background(MaterialTheme.colorScheme.background),
     ) {
         UserProfilePreferencesContent(
             Modifier
@@ -109,37 +117,56 @@ fun UserProfilePreferencesContent(
         LaunchedEffect(Unit) {
             focusRequester.tryRequestFocus()
         }
+        val glass = LocalLiquidGlass.current
         Column(
-            modifier = Modifier.background(MaterialTheme.colorScheme.surfaceColorAtElevation(1.dp)),
+            modifier =
+                if (glass) {
+                    Modifier
+                } else {
+                    Modifier.background(MaterialTheme.colorScheme.surfaceColorAtElevation(1.dp))
+                },
         ) {
             Text(
                 text = stringResource(R.string.profile_specific_settings),
-                style = MaterialTheme.typography.headlineSmall,
-                color = MaterialTheme.colorScheme.onSurface,
-                textAlign = TextAlign.Center,
+                style = if (glass) GlassType.pageTitle else MaterialTheme.typography.headlineSmall,
+                color = if (glass) Color.White else MaterialTheme.colorScheme.onSurface,
+                textAlign = if (glass) TextAlign.Start else TextAlign.Center,
                 modifier =
                     Modifier
                         .fillMaxWidth()
-                        .padding(vertical = 8.dp),
+                        .padding(
+                            start = if (glass) 26.dp else 0.dp,
+                            top = if (glass) 18.dp else 8.dp,
+                            bottom = if (glass) 14.dp else 8.dp,
+                        ),
             )
             LazyColumn(
                 state = state,
                 horizontalAlignment = Alignment.Start,
                 verticalArrangement = Arrangement.spacedBy(0.dp),
-                contentPadding = PaddingValues(16.dp),
+                contentPadding =
+                    if (glass) {
+                        PaddingValues(start = 18.dp, end = 22.dp, bottom = 24.dp)
+                    } else {
+                        PaddingValues(16.dp)
+                    },
                 modifier = Modifier,
             ) {
                 UserProfileSettings.Preferences.forEachIndexed { groupIndex, group ->
                     item {
                         Text(
-                            text = stringResource(group.title),
-                            style = MaterialTheme.typography.titleMedium,
-                            color = MaterialTheme.colorScheme.onSurface,
+                            text = if (glass) stringResource(group.title).uppercase() else stringResource(group.title),
+                            style = if (glass) GlassType.sectionLabel else MaterialTheme.typography.titleMedium,
+                            color = if (glass) Color.White.copy(alpha = 0.54f) else MaterialTheme.colorScheme.onSurface,
                             textAlign = TextAlign.Start,
                             modifier =
                                 Modifier
                                     .fillMaxWidth()
-                                    .padding(top = 8.dp, bottom = 4.dp),
+                                    .padding(
+                                        start = if (glass) GlassTokens.rowInset else 0.dp,
+                                        top = if (glass) 26.dp else 8.dp,
+                                        bottom = if (glass) 7.dp else 4.dp,
+                                    ),
                         )
                     }
                     val groupPreferences =
@@ -156,7 +183,10 @@ fun UserProfilePreferencesContent(
 
                             val modifier =
                                 Modifier
-                                    .ifElse(
+                                    .glassPreferenceRow(
+                                        first = prefIndex == 0,
+                                        last = prefIndex == groupPreferences.lastIndex,
+                                    ).ifElse(
                                         groupIndex == focusedIndex.first && prefIndex == focusedIndex.second,
                                         Modifier.focusRequester(focusRequester),
                                     ).onFocusChanged {

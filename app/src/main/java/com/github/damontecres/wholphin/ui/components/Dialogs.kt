@@ -29,6 +29,7 @@ import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.Delete
 import androidx.compose.material3.HorizontalDivider
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.CompositionLocalProvider
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
@@ -70,6 +71,9 @@ import com.github.damontecres.wholphin.ui.formatBitrate
 import com.github.damontecres.wholphin.ui.isNotNullOrBlank
 import com.github.damontecres.wholphin.ui.playback.SimpleMediaStream
 import com.github.damontecres.wholphin.ui.roundMinutes
+import com.github.damontecres.wholphin.ui.theme.GlassTokens
+import com.github.damontecres.wholphin.ui.theme.GlassType
+import com.github.damontecres.wholphin.ui.theme.LocalLiquidGlass
 import com.github.damontecres.wholphin.util.ExceptionHandler
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.launch
@@ -231,8 +235,8 @@ fun DialogPopup(
             onDismissRequest = onDismissRequest,
             properties = properties,
         ) {
-            val elevatedContainerColor =
-                MaterialTheme.colorScheme.surfaceColorAtElevation(elevation)
+            val glass = LocalLiquidGlass.current
+            val shape = if (glass) GlassTokens.panelShape else RoundedCornerShape(28.dp)
             DialogPopupContent(
                 title = title,
                 dialogItems = dialogItems,
@@ -254,12 +258,8 @@ fun DialogPopup(
                                 waiting = false
                             }
                             false
-                        }.shadow(elevation = elevation, shape = RoundedCornerShape(28.0.dp))
-                        .graphicsLayer {
-                            this.clip = true
-                            this.shape = RoundedCornerShape(28.0.dp)
-                        }.drawBehind { drawRect(color = elevatedContainerColor) }
-                        .padding(PaddingValues(24.dp)),
+                        }.glassDialogSurface(shape = shape, classicElevation = elevation)
+                        .padding(PaddingValues(if (glass) 20.dp else 24.dp)),
             )
         }
     }
@@ -274,14 +274,17 @@ fun DialogPopupContent(
     modifier: Modifier = Modifier,
     dismissOnClick: Boolean = true,
 ) {
+    val glass = LocalLiquidGlass.current
     Column(
         verticalArrangement = Arrangement.spacedBy(8.dp),
         modifier = modifier,
     ) {
         Text(
             text = title,
-            style = MaterialTheme.typography.titleLarge,
-            color = MaterialTheme.colorScheme.onSurface,
+            // `onSurface` is a dark ink in the glass colour scheme: on a smoked dialog pane it
+            // would be nearly invisible, which made a long-press menu look like it had no title.
+            style = if (glass) GlassType.sectionTitle else MaterialTheme.typography.titleLarge,
+            color = if (glass) Color.White else MaterialTheme.colorScheme.onSurface,
         )
         val scope = rememberCoroutineScope()
         val listState = rememberLazyListState()
@@ -302,6 +305,9 @@ fun DialogPopupContent(
                         ListItem(
                             selected = item.selected,
                             enabled = !waiting && item.enabled,
+                            shape = glassMenuRowShape(),
+                            colors = glassMenuRowColors(),
+                            glow = glassMenuRowGlow(),
                             onClick = {
                                 if (dismissOnClick || item.dismissOnClick) {
                                     onDismissRequest.invoke()
@@ -365,6 +371,8 @@ fun ScrollableDialog(
     val scrollAmount = 100f
     val columnState = rememberLazyListState()
     val scope = rememberCoroutineScope()
+    val glass = LocalLiquidGlass.current
+    val shape = if (glass) GlassTokens.panelShape else RoundedCornerShape(8.dp)
 
     fun scroll(reverse: Boolean = false) {
         scope.launch(ExceptionHandler()) {
@@ -378,35 +386,36 @@ fun ScrollableDialog(
                 usePlatformDefaultWidth = false,
             ),
     ) {
-        LazyColumn(
-            state = columnState,
-            contentPadding = PaddingValues(16.dp),
-            verticalArrangement = Arrangement.spacedBy(itemSpacing),
-            content = content,
-            modifier =
-                Modifier
-                    .width(width)
-                    .heightIn(max = maxHeight)
-                    .focusable()
-                    .shadow(elevation = 8.dp, shape = RoundedCornerShape(8.dp))
-                    .background(
-                        MaterialTheme.colorScheme.surfaceColorAtElevation(3.dp),
-                        shape = RoundedCornerShape(8.dp),
-                    ).onKeyEvent {
-                        if (it.type == KeyEventType.KeyUp) {
+        CompositionLocalProvider(
+            LocalContentColor provides if (glass) Color.White else LocalContentColor.current,
+        ) {
+            LazyColumn(
+                state = columnState,
+                contentPadding = PaddingValues(16.dp),
+                verticalArrangement = Arrangement.spacedBy(itemSpacing),
+                content = content,
+                modifier =
+                    Modifier
+                        .width(width)
+                        .heightIn(max = maxHeight)
+                        .focusable()
+                        .glassDialogSurface(shape = shape, classicElevation = 3.dp)
+                        .onKeyEvent {
+                            if (it.type == KeyEventType.KeyUp) {
+                                return@onKeyEvent false
+                            }
+                            if (it.key == Key.DirectionDown) {
+                                scroll(false)
+                                return@onKeyEvent true
+                            }
+                            if (it.key == Key.DirectionUp) {
+                                scroll(true)
+                                return@onKeyEvent true
+                            }
                             return@onKeyEvent false
-                        }
-                        if (it.key == Key.DirectionDown) {
-                            scroll(false)
-                            return@onKeyEvent true
-                        }
-                        if (it.key == Key.DirectionUp) {
-                            scroll(true)
-                            return@onKeyEvent true
-                        }
-                        return@onKeyEvent false
-                    },
-        )
+                        },
+            )
+        }
     }
 }
 
@@ -420,20 +429,24 @@ fun BasicDialog(
     elevation: Dp = 1.dp,
     content: @Composable () -> Unit,
 ) {
+    val glass = LocalLiquidGlass.current
+    val shape = if (glass) GlassTokens.panelShape else RoundedCornerShape(8.dp)
     Dialog(
         onDismissRequest = onDismissRequest,
         properties = properties,
     ) {
         Box(
-            modifier =
-                Modifier
-                    .shadow(elevation = elevation, shape = RoundedCornerShape(8.dp))
-                    .background(
-                        MaterialTheme.colorScheme.surfaceColorAtElevation(elevation),
-                        shape = RoundedCornerShape(8.dp),
-                    ),
+            modifier = Modifier.glassDialogSurface(shape = shape, classicElevation = elevation),
         ) {
-            content()
+            // A dialog is its own window with no page surface to inherit an ink from, so the
+            // theme's dark `onSurface` would paint every unstyled label dark-on-dark over the
+            // smoked pane. Providing the ink here fixes a whole class of dialogs at once
+            // instead of asking each one to remember to pass white.
+            CompositionLocalProvider(
+                LocalContentColor provides if (glass) Color.White else LocalContentColor.current,
+            ) {
+                content()
+            }
         }
     }
 }
@@ -449,7 +462,7 @@ fun ConfirmDialog(
     onConfirm: () -> Unit,
     properties: DialogProperties = DialogProperties(),
     elevation: Dp = 1.dp,
-    bodyColor: Color = MaterialTheme.colorScheme.onSurface,
+    bodyColor: Color = LocalContentColor.current,
     @StringRes cancelStringRes: Int = R.string.cancel,
     @StringRes confirmStringRes: Int = R.string.confirm,
 ) = BasicDialog(
@@ -471,7 +484,7 @@ fun ConfirmDialogContent(
     onCancel: () -> Unit,
     onConfirm: () -> Unit,
     modifier: Modifier = Modifier,
-    bodyColor: Color = MaterialTheme.colorScheme.onSurface,
+    bodyColor: Color = LocalContentColor.current,
     @StringRes cancelStringRes: Int = R.string.cancel,
     @StringRes confirmStringRes: Int = R.string.confirm,
 ) {
@@ -483,7 +496,7 @@ fun ConfirmDialogContent(
         item {
             Text(
                 text = title,
-                color = MaterialTheme.colorScheme.onSurface,
+                color = LocalContentColor.current,
                 style = MaterialTheme.typography.titleLarge,
                 textAlign = TextAlign.Center,
                 modifier = Modifier.fillParentMaxWidth(),
@@ -538,14 +551,14 @@ fun ConfirmDeleteDialog(
                 Text(
                     text = stringResource(R.string.delete_item),
                     style = MaterialTheme.typography.titleMedium,
-                    color = MaterialTheme.colorScheme.onSurface,
+                    color = LocalContentColor.current,
                 )
             }
             item {
                 Text(
                     text = itemTitle,
                     style = MaterialTheme.typography.titleLarge,
-                    color = MaterialTheme.colorScheme.onSurface,
+                    color = LocalContentColor.current,
                     textAlign = TextAlign.Center,
                     modifier =
                         Modifier

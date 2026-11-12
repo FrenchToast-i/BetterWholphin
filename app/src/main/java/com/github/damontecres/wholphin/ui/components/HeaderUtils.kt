@@ -21,4 +21,11 @@ object HeaderUtils {
         Modifier
             .padding(padding)
             .height(height)
+
+    /**
+     * Glass headers are panes rather than bare type, so they need neither the deep inset that
+     * clears the classic progress bar nor a fixed slot: the page already provides the margin and
+     * the pane measures to its own content.
+     */
+    val glassModifier = Modifier.padding(top = 4.dp, bottom = 12.dp)
 }

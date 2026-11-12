@@ -24,6 +24,7 @@ import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.collectLatest
 import kotlinx.coroutines.flow.combine
+import kotlinx.coroutines.flow.map
 import kotlinx.coroutines.flow.update
 import kotlinx.coroutines.withContext
 import org.jellyfin.sdk.api.client.ApiClient
@@ -52,6 +53,7 @@ class NavDrawerService
         private val serverPreferencesDao: ServerPreferencesDao,
         private val seerrServerRepository: SeerrServerRepository,
         private val musicService: MusicService,
+        private val accountPreferencesService: AccountPreferencesService,
     ) {
         private val _state = MutableStateFlow(NavDrawerItemState())
         val state: StateFlow<NavDrawerItemState> = _state
@@ -62,9 +64,14 @@ class NavDrawerService
                 serverRepository.currentUserFlow,
                 serverRepository.currentUserDtoFlow,
                 seerrServerRepository.active,
-            ) { user, userDto, discoverActive ->
-                Triple(user, userDto, discoverActive)
-            }.collectLatestIn(coroutineScope) { (user, userDto, discoverActive) ->
+                // Seerr is per account too: a profile can be connected and still not want the
+                // Discover door, and switching profile has to add or remove it without a
+                // restart.
+                accountPreferencesService.current.map { it.seerrEnabled },
+            ) { user, userDto, discoverActive, seerrEnabled ->
+                NavDrawerInput(user, userDto, discoverActive && seerrEnabled)
+            }.collectLatestIn(coroutineScope) { input ->
+                val (user, userDto, discoverActive) = input
                 Timber.d(
                     "User updated: user=%s, userDto=%s, discoverActive=%s",
                     user?.id,
@@ -194,6 +201,10 @@ class NavDrawerService
         ) {
             val builtins =
                 buildList {
+                    // Tonight leads the list: it is the page the app opens an evening with, and
+                    // sitting it beside the libraries keeps it one press from every destination
+                    // without spending a second control on the bar.
+                    add(NavDrawerItem.Tonight)
                     add(NavDrawerItem.Favorites)
                     if (discoverActive) add(NavDrawerItem.Discover)
                 }
@@ -251,6 +262,12 @@ class NavDrawerService
             }
         }
     }
+
+private data class NavDrawerInput(
+    val user: JellyfinUser?,
+    val userDto: ServerUserConfig?,
+    val discoverActive: Boolean,
+)
 
 data class NavDrawerItemState(
     val items: List<NavDrawerItem> = emptyList(),

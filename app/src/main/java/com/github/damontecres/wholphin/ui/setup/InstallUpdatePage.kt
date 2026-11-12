@@ -29,6 +29,7 @@ import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.input.key.Key
 import androidx.compose.ui.input.key.KeyEventType
 import androidx.compose.ui.input.key.key
@@ -59,7 +60,11 @@ import com.github.damontecres.wholphin.ui.components.TextButton
 import com.github.damontecres.wholphin.ui.dimAndBlur
 import com.github.damontecres.wholphin.ui.formatBytes
 import com.github.damontecres.wholphin.ui.launchIO
+import com.github.damontecres.wholphin.ui.ifElse
+import com.github.damontecres.wholphin.ui.theme.GlassTokens
+import com.github.damontecres.wholphin.ui.theme.LocalLiquidGlass
 import com.github.damontecres.wholphin.ui.theme.WholphinTheme
+import com.github.damontecres.wholphin.ui.theme.glassSurface
 import com.github.damontecres.wholphin.util.ExceptionHandler
 import com.github.damontecres.wholphin.util.LoadingState
 import com.github.damontecres.wholphin.util.Version
@@ -249,6 +254,7 @@ fun InstallUpdatePageContent(
                 columnState.scrollBy(if (reverse) -scrollAmount else scrollAmount)
             }
         }
+        val glass = LocalLiquidGlass.current
         val columnInteractionSource = remember { MutableInteractionSource() }
         val columnFocused by columnInteractionSource.collectIsFocusedAsState()
         val columnColor =
@@ -266,9 +272,18 @@ fun InstallUpdatePageContent(
                     .focusable(interactionSource = columnInteractionSource)
                     .fillMaxHeight()
                     .fillMaxWidth(.6f)
-                    .background(
-                        columnColor,
-                        shape = RoundedCornerShape(16.dp),
+                    .ifElse(
+                        glass,
+                        Modifier.glassSurface(
+                            shape = GlassTokens.panelShape,
+                            tint = if (columnFocused) {
+                                GlassTokens.panelTint.copy(alpha = 0.30f)
+                            } else {
+                                GlassTokens.panelTint
+                            },
+                            scrim = 0.35f,
+                        ),
+                        Modifier.background(columnColor, shape = RoundedCornerShape(16.dp)),
                     ).onKeyEvent {
                         if (it.type == KeyEventType.KeyUp) {
                             return@onKeyEvent false
@@ -295,20 +310,24 @@ fun InstallUpdatePageContent(
                 Modifier
                     .fillMaxWidth()
                     .align(Alignment.CenterVertically)
-                    .background(
-                        MaterialTheme.colorScheme.surfaceColorAtElevation(1.dp),
-                        shape = RoundedCornerShape(16.dp),
+                    .ifElse(
+                        glass,
+                        Modifier.glassSurface(shape = GlassTokens.panelShape, scrim = 0.35f),
+                        Modifier.background(
+                            MaterialTheme.colorScheme.surfaceColorAtElevation(1.dp),
+                            shape = RoundedCornerShape(16.dp),
+                        ),
                     ).padding(16.dp),
         ) {
             Text(
                 text = stringResource(R.string.update_available),
                 style = MaterialTheme.typography.displaySmall,
-                color = MaterialTheme.colorScheme.onSurface,
+                color = if (glass) Color.White else MaterialTheme.colorScheme.onSurface,
             )
             Text(
                 text = "$currentVersion => " + release.version.toString(),
                 style = MaterialTheme.typography.titleLarge,
-                color = MaterialTheme.colorScheme.onSurface,
+                color = if (glass) Color.White else MaterialTheme.colorScheme.onSurface,
             )
             TextButton(
                 stringRes = R.string.download_and_update,

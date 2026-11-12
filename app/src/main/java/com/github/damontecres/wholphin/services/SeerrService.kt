@@ -1,5 +1,6 @@
 package com.github.damontecres.wholphin.services
 
+import com.github.damontecres.wholphin.api.seerr.RequestApi
 import com.github.damontecres.wholphin.api.seerr.SeerrApiClient
 import com.github.damontecres.wholphin.api.seerr.model.CreditCast
 import com.github.damontecres.wholphin.api.seerr.model.CreditCrew
@@ -28,11 +29,30 @@ import kotlinx.coroutines.flow.firstOrNull
 import org.jellyfin.sdk.model.api.BaseItemKind
 import org.jellyfin.sdk.model.api.ImageType
 import org.jellyfin.sdk.model.serializer.toUUIDOrNull
+import timber.log.Timber
 import java.util.UUID
 import javax.inject.Inject
 import javax.inject.Singleton
 
 typealias SeerrSearchResult = SearchGet200ResponseResultsInner
+
+/** One in-flight Seerr request, resolved into the same card shape discovery uses. */
+data class SeerrRequestItem(
+    val item: TmdbItem,
+    val availability: SeerrAvailability,
+)
+
+private const val MAX_PENDING_REQUESTS = 8
+
+/** Seerr's request status for a declined ask. */
+private const val REQUEST_DECLINED = 3
+
+/** Whether Seerr is still working on this title rather than having it or having given up. */
+val SeerrAvailability.isInFlight: Boolean
+    get() =
+        this == SeerrAvailability.PENDING ||
+            this == SeerrAvailability.PROCESSING ||
+            this == SeerrAvailability.PARTIALLY_AVAILABLE
 
 /**
  * Main access for the current Seerr server (if any)
@@ -345,6 +365,87 @@ class SeerrService
                     }
                 }
             setter.invoke(profiles, rootFolders)
+        }
+
+        /**
+         * What this viewer has asked Seerr for and is still waiting on.
+         *
+         * Seerr's request rows carry a TMDB id but no title or poster, so each one is resolved
+         * through the movie/tv endpoint the request points at. Only titles that are actually in
+         * flight are returned (waiting for approval, downloading, or partly here): a completed
+         * request is already a library item, and a declined one is not something to recommend.
+         *
+         * Best effort: one unresolvable row is skipped, and any failure returns an empty list so
+         * the home page simply keeps its previous shape. The viewer's own requests are the
+         * subjective half of the Seerr integration; the Discover page remains where failures
+         * are reported.
+         */
+        suspend fun pendingRequests(limit: Int = MAX_PENDING_REQUESTS): List<SeerrRequestItem> {
+            val userId = seerrServerRepository.current.firstOrNull()?.config?.id ?: return emptyList()
+            val requests =
+                try {
+                    api.requestApi
+                        .requestGet(
+                            take = limit * 2,
+                            requestedBy = userId,
+                            filter = RequestApi.FilterRequestGet.ALL,
+                            sort = RequestApi.SortRequestGet.ADDED,
+                            sortDirection = RequestApi.SortDirectionRequestGet.DESC,
+                        ).results
+                        .orEmpty()
+                } catch (ex: Exception) {
+                    Timber.w("Seerr requests unavailable: %s", ex.javaClass.simpleName)
+                    return emptyList()
+                }
+
+            val seen = mutableSetOf<Int>()
+            val items = mutableListOf<SeerrRequestItem>()
+            for (request in requests) {
+                // Declined requests are not pending work and not something to recommend.
+                if (request.status == REQUEST_DECLINED) continue
+                val media = request.media ?: continue
+                val availability = SeerrAvailability.from(media.status) ?: continue
+                if (!availability.isInFlight) continue
+                val tmdbId = media.tmdbId ?: continue
+                if (!seen.add(tmdbId)) continue
+
+                val isMovie = request.type == "movie"
+                val item =
+                    try {
+                        if (isMovie) {
+                            val movie = api.moviesApi.movieMovieIdGet(tmdbId)
+                            TmdbItem(
+                                id = tmdbId,
+                                mediaType = "movie",
+                                title = movie.title,
+                                overview = movie.overview.orEmpty(),
+                                posterPath = movie.posterPath,
+                                backdropPath = movie.backdropPath,
+                                voteAverage = movie.voteAverage?.toDouble() ?: 0.0,
+                                releaseDate = movie.releaseDate,
+                            )
+                        } else {
+                            val tv = api.tvApi.tvTvIdGet(tmdbId)
+                            TmdbItem(
+                                id = tmdbId,
+                                mediaType = "tv",
+                                name = tv.name,
+                                overview = tv.overview.orEmpty(),
+                                posterPath = tv.posterPath,
+                                backdropPath = tv.backdropPath,
+                                voteAverage = tv.voteAverage?.toDouble() ?: 0.0,
+                                firstAirDate = tv.firstAirDate,
+                            )
+                        }
+                    } catch (ex: Exception) {
+                        Timber.w("Seerr request could not be resolved: %s", ex.javaClass.simpleName)
+                        null
+                    } ?: continue
+                if (item.displayTitle.isBlank()) continue
+                items.add(SeerrRequestItem(item, availability))
+                if (items.size >= limit) break
+            }
+            return items
         }
 
         suspend fun createDiscoverItem(item: Any): DiscoverItem =

@@ -29,6 +29,7 @@ import com.github.damontecres.wholphin.ui.components.QuickDetails
 import com.github.damontecres.wholphin.ui.components.SeriesName
 import com.github.damontecres.wholphin.ui.components.VideoStreamDetails
 import com.github.damontecres.wholphin.ui.isNotNullOrBlank
+import com.github.damontecres.wholphin.ui.theme.LocalLiquidGlass
 import org.jellyfin.sdk.model.api.PersonKind
 
 @Composable
@@ -55,7 +56,13 @@ fun EpisodeDetailsHeader(
             modifier = Modifier.fillMaxWidth(.60f),
         ) {
             val padding = 8.dp
-            QuickDetails(ep.ui.quickDetails, ep.timeRemainingOrRuntime)
+            QuickDetails(
+                ep.ui.quickDetails,
+                ep.timeRemainingOrRuntime,
+                // The glass pane is 60% wide, so the line has to end in an ellipsis inside it
+                // rather than clipping the last detail (an episode's "Ends at …") at the edge.
+                oneLine = LocalLiquidGlass.current,
+            )
 
             VideoStreamDetails(
                 chosenStreams = chosenStreams,

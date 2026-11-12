@@ -24,6 +24,7 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.focus.FocusRequester
 import androidx.compose.ui.focus.focusRequester
+import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.platform.LocalResources
 import androidx.compose.ui.res.stringResource
@@ -50,6 +51,10 @@ import com.github.damontecres.wholphin.ui.dimAndBlur
 import com.github.damontecres.wholphin.ui.isNotNullOrBlank
 import com.github.damontecres.wholphin.ui.nav.Destination
 import com.github.damontecres.wholphin.ui.serverSupportedMessage
+import com.github.damontecres.wholphin.ui.theme.GlassTokens
+import com.github.damontecres.wholphin.ui.theme.GlassType
+import com.github.damontecres.wholphin.ui.theme.LocalLiquidGlass
+import com.github.damontecres.wholphin.ui.theme.glassSurface
 import com.github.damontecres.wholphin.ui.tryRequestFocus
 import com.github.damontecres.wholphin.util.LoadingState
 import kotlinx.coroutines.launch
@@ -130,31 +135,58 @@ fun SwitchUserContent(
         }
 
         LoadingState.Success -> {
+            val glass = LocalLiquidGlass.current
             Box(
                 modifier = modifier.dimAndBlur(showAddUser || switchUserWithPin != null),
             ) {
                 Column(
                     horizontalAlignment = Alignment.CenterHorizontally,
-                    verticalArrangement = Arrangement.spacedBy(24.dp),
+                    verticalArrangement = Arrangement.spacedBy(if (glass) 20.dp else 28.dp),
                     modifier =
-                        Modifier
-                            .fillMaxWidth()
-                            .align(Alignment.Center)
-                            .padding(16.dp),
+                        if (glass) {
+                            // The first screen is a sheet of the same material as the pages after
+                            // it, floating on the theme's colour field. Narrow enough that the
+                            // profile row is the focal point rather than four discs marooned in
+                            // the middle of a very wide pane.
+                            Modifier
+                                .fillMaxWidth(0.58f)
+                                .align(Alignment.Center)
+                                .glassSurface(
+                                    shape = GlassTokens.panelShape,
+                                    tint = GlassTokens.sheetTint,
+                                    scrim = GlassTokens.SHEET_SCRIM,
+                                    elevation = GlassTokens.dialogElevation,
+                                ).padding(horizontal = 32.dp, vertical = 28.dp)
+                        } else {
+                            Modifier
+                                .fillMaxWidth()
+                                .align(Alignment.Center)
+                                .padding(16.dp)
+                        },
                 ) {
                     Column(
                         horizontalAlignment = Alignment.CenterHorizontally,
-                        verticalArrangement = Arrangement.spacedBy(8.dp),
+                        verticalArrangement = Arrangement.spacedBy(if (glass) 4.dp else 8.dp),
                     ) {
                         Text(
                             text = stringResource(R.string.select_user),
-                            style = MaterialTheme.typography.displaySmall,
-                            color = MaterialTheme.colorScheme.onSurface,
+                            style = if (glass) GlassType.pageTitle else MaterialTheme.typography.displaySmall,
+                            color = if (glass) Color.White else MaterialTheme.colorScheme.onSurface,
                         )
                         Text(
                             text = server.name ?: server.url,
-                            style = MaterialTheme.typography.titleLarge,
-                            color = MaterialTheme.colorScheme.onSurface,
+                            style =
+                                if (glass) {
+                                    GlassType.meta.copy(color = Color.White.copy(alpha = 0.62f))
+                                } else {
+                                    MaterialTheme.typography.titleLarge
+                                },
+                            color =
+                                if (glass) {
+                                    Color.White.copy(alpha = 0.62f)
+                                } else {
+                                    MaterialTheme.colorScheme.onSurface
+                                },
                         )
                     }
                     UserList(

@@ -23,6 +23,7 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.focus.FocusRequester
 import androidx.compose.ui.focus.focusRequester
+import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.text.style.TextAlign
@@ -43,6 +44,8 @@ import com.github.damontecres.wholphin.ui.data.SortAndDirection
 import com.github.damontecres.wholphin.ui.detail.CardGrid
 import com.github.damontecres.wholphin.ui.detail.GridItemDetails
 import com.github.damontecres.wholphin.ui.ifElse
+import com.github.damontecres.wholphin.ui.theme.GlassType
+import com.github.damontecres.wholphin.ui.theme.LocalLiquidGlass
 import com.github.damontecres.wholphin.ui.main.HomePageHeader
 import com.github.damontecres.wholphin.ui.util.ScrollToTopBringIntoViewSpec
 import org.jellyfin.sdk.model.api.BaseItemKind
@@ -78,11 +81,19 @@ fun CollectionFolderViewScope.CollectionFolderGrid(
                 HomePageHeader(
                     item = focusedItem,
                     showLogo = preferences.appPreferences.interfacePreferences.showLogos,
+                    // The classic header reserves a fixed slot because its type sits bare on the
+                    // artwork and the grid beneath assumes a constant offset. The glass header is
+                    // a pane: it measures to its own content, or the synopsis is sliced by the
+                    // pane's bottom rim.
                     modifier =
-                        Modifier
-                            .fillMaxWidth()
-                            .height(200.dp)
-                            .padding(HeaderUtils.padding),
+                        if (LocalLiquidGlass.current) {
+                            HeaderUtils.glassModifier
+                        } else {
+                            Modifier
+                                .fillMaxWidth()
+                                .height(200.dp)
+                                .padding(HeaderUtils.padding)
+                        },
                 )
             }
             CardGrid(
@@ -256,15 +267,24 @@ val CollectionType.baseItemKinds: List<BaseItemKind>
 fun GridTitle(
     title: String,
     modifier: Modifier = Modifier,
-) = Text(
-    text = title,
-    style = MaterialTheme.typography.displaySmall,
-    color = MaterialTheme.colorScheme.onBackground,
-    textAlign = TextAlign.Center,
-    maxLines = 1,
-    overflow = TextOverflow.Ellipsis,
-    modifier = modifier.fillMaxWidth(),
-)
+) {
+    // A centred 36sp title over artwork is the classic look. In glass mode it aligns with the
+    // grid it labels and drops to a heading size, so the page title, the filters and the cards
+    // share one left margin.
+    val glass = LocalLiquidGlass.current
+    Text(
+        text = title,
+        style = if (glass) GlassType.pageTitle else MaterialTheme.typography.displaySmall,
+        color = if (glass) Color.White else MaterialTheme.colorScheme.onBackground,
+        textAlign = if (glass) TextAlign.Start else TextAlign.Center,
+        maxLines = 1,
+        overflow = TextOverflow.Ellipsis,
+        modifier =
+            modifier
+                .fillMaxWidth()
+                .then(if (glass) Modifier.padding(start = 16.dp, top = 4.dp, bottom = 4.dp) else Modifier),
+    )
+}
 
 data class GridClickActions(
     val onClickItem: (Int, BaseItem) -> Unit,

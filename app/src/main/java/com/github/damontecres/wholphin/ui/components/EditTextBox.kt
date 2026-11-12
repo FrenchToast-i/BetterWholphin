@@ -2,6 +2,8 @@ package com.github.damontecres.wholphin.ui.components
 
 import androidx.compose.foundation.background
 import androidx.compose.foundation.interaction.MutableInteractionSource
+import androidx.compose.foundation.layout.Box
+import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.interaction.collectIsFocusedAsState
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Column
@@ -34,6 +36,7 @@ import androidx.compose.runtime.getValue
 import androidx.compose.runtime.remember
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.SolidColor
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.text.input.ImeAction
@@ -47,7 +50,10 @@ import androidx.tv.material3.LocalContentColor
 import androidx.tv.material3.MaterialTheme
 import com.github.damontecres.wholphin.R
 import com.github.damontecres.wholphin.ui.PreviewTvSpec
+import com.github.damontecres.wholphin.ui.theme.GlassTokens
+import com.github.damontecres.wholphin.ui.theme.LocalLiquidGlass
 import com.github.damontecres.wholphin.ui.theme.WholphinTheme
+import com.github.damontecres.wholphin.ui.theme.glassCapsule
 
 /**
  * An input field for text customized for TV entry
@@ -68,17 +74,35 @@ fun EditTextBox(
     interactionSource: MutableInteractionSource = remember { MutableInteractionSource() },
 ) {
     val focused by interactionSource.collectIsFocusedAsState()
+    val glass = LocalLiquidGlass.current
+    // On a field drawn over artwork the classic scheme's surfaceVariant is a lavender slab that
+    // looks like a piece of another app: glass wants smoke and white type, and the error state to
+    // read as a warning rather than as a different fill colour.
     val colors =
-        TextFieldDefaults.colors(
-            unfocusedTextColor = MaterialTheme.colorScheme.onSurfaceVariant,
-            unfocusedContainerColor = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.6f),
-            focusedTextColor = MaterialTheme.colorScheme.onSurfaceVariant,
-            focusedContainerColor = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.8f),
-            disabledTextColor = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.25f),
-            disabledContainerColor = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.25f),
-            errorContainerColor = MaterialTheme.colorScheme.errorContainer.copy(alpha = 0.75f),
-            errorTextColor = MaterialTheme.colorScheme.onErrorContainer,
-        )
+        if (glass) {
+            TextFieldDefaults.colors(
+                unfocusedTextColor = Color.White.copy(alpha = 0.92f),
+                unfocusedContainerColor = Color.Black.copy(alpha = 0.42f),
+                focusedTextColor = Color.White,
+                focusedContainerColor = Color.Black.copy(alpha = 0.56f),
+                disabledTextColor = Color.White.copy(alpha = 0.3f),
+                disabledContainerColor = Color.Black.copy(alpha = 0.2f),
+                errorContainerColor = Color.Black.copy(alpha = 0.56f),
+                errorTextColor = Color.White,
+                cursorColor = Color.White,
+            )
+        } else {
+            TextFieldDefaults.colors(
+                unfocusedTextColor = MaterialTheme.colorScheme.onSurfaceVariant,
+                unfocusedContainerColor = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.6f),
+                focusedTextColor = MaterialTheme.colorScheme.onSurfaceVariant,
+                focusedContainerColor = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.8f),
+                disabledTextColor = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.25f),
+                disabledContainerColor = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.25f),
+                errorContainerColor = MaterialTheme.colorScheme.errorContainer.copy(alpha = 0.75f),
+                errorTextColor = MaterialTheme.colorScheme.onErrorContainer,
+            )
+        }
     val textColor =
         when {
             !isInputValid(state.text.toString()) -> colors.errorTextColor
@@ -119,10 +143,12 @@ fun EditTextBox(
                                 shape = if (maxLines > 1) RoundedCornerShape(8.dp) else CircleShape,
                             ).padding(8.dp),
                 ) {
+                    val contentColor =
+                        if (glass) Color.White else MaterialTheme.colorScheme.onSurfaceVariant
                     CompositionLocalProvider(
-                        androidx.compose.material3.LocalContentColor provides MaterialTheme.colorScheme.onSurfaceVariant,
+                        androidx.compose.material3.LocalContentColor provides contentColor,
                     ) {
-                        CompositionLocalProvider(LocalContentColor provides MaterialTheme.colorScheme.onSurfaceVariant) {
+                        CompositionLocalProvider(LocalContentColor provides contentColor) {
                             leadingIcon?.invoke()
                             innerTextField.invoke()
                         }
@@ -222,15 +248,21 @@ fun EditTextBox(
     supportingText: @Composable (() -> Unit)? = null,
     placeholder: @Composable (() -> Unit)? = null,
     interactionSource: MutableInteractionSource = remember { MutableInteractionSource() },
+    glass: Boolean = false,
 ) {
+    val fieldFocused by interactionSource.collectIsFocusedAsState()
     val colors =
         TextFieldDefaults.colors(
-            unfocusedTextColor = MaterialTheme.colorScheme.onSurfaceVariant,
-            unfocusedContainerColor = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.6f),
-            focusedTextColor = MaterialTheme.colorScheme.onSurfaceVariant,
-            focusedContainerColor = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.8f),
-            disabledTextColor = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.25f),
-            disabledContainerColor = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.25f),
+            // On glass the field is its own pane of the material, so the fill comes from the
+            // backdrop rather than a theme colour. The type has to stay white: the glass
+            // scheme's `onPrimaryContainer` is black (it is the selected-pill colour), which
+            // would make anything typed here disappear into the artwork.
+            unfocusedTextColor = if (glass) Color.White else MaterialTheme.colorScheme.onSurfaceVariant,
+            unfocusedContainerColor = if (glass) Color.Transparent else MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.6f),
+            focusedTextColor = if (glass) Color.White else MaterialTheme.colorScheme.onSurfaceVariant,
+            focusedContainerColor = if (glass) Color.Transparent else MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.8f),
+            disabledTextColor = if (glass) Color.White.copy(alpha = 0.38f) else MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.25f),
+            disabledContainerColor = if (glass) Color.Transparent else MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.25f),
             errorContainerColor = MaterialTheme.colorScheme.errorContainer.copy(alpha = 0.75f),
             errorTextColor = MaterialTheme.colorScheme.onErrorContainer,
         )
@@ -240,13 +272,16 @@ fun EditTextBox(
             modifier =
                 modifier
                     .defaultMinSize(
-                        minWidth = TextFieldDefaults.MinWidth,
+                        minWidth = if (glass) GlassTokens.searchWidth else TextFieldDefaults.MinWidth,
                         minHeight = height,
                     ).height(height),
             onValueChange = onValueChange,
             enabled = enabled,
             readOnly = readOnly,
-            textStyle = MaterialTheme.typography.bodyLarge.merge(MaterialTheme.colorScheme.onPrimaryContainer),
+            textStyle =
+                MaterialTheme.typography.bodyLarge.merge(
+                    if (glass) Color.White else MaterialTheme.colorScheme.onPrimaryContainer,
+                ),
             cursorBrush = SolidColor(colors.cursorColor),
             keyboardOptions = keyboardOptions,
             keyboardActions = keyboardActions,
@@ -295,16 +330,32 @@ fun EditTextBox(
                                 vertical = 10.dp,
                             ),
                         container = {
-                            Container(
-                                enabled = enabled,
-                                isError = !isInputValid.invoke(value),
-                                interactionSource = interactionSource,
-                                modifier = Modifier,
-                                colors = colors,
-                                shape = CircleShape,
-                                focusedIndicatorLineThickness = 4.dp,
-                                unfocusedIndicatorLineThickness = 0.dp,
-                            )
+                            if (glass) {
+                                // The field is a small capsule of the same material as the bar.
+                                // It carries its own lens and rim so a focused search field reads
+                                // as glass rather than as a hole punched in the artwork.
+                                Box(
+                                    Modifier
+                                        .fillMaxSize()
+                                        .glassCapsule(
+                                            shape = CircleShape,
+                                            frost = if (fieldFocused) GlassTokens.FOCUS_FROST else GlassTokens.BAR_FROST,
+                                            elevation = 0.dp,
+                                            rim = if (fieldFocused) GlassTokens.focusHighlight else GlassTokens.pillHighlight,
+                                        ),
+                                )
+                            } else {
+                                Container(
+                                    enabled = enabled,
+                                    isError = !isInputValid.invoke(value),
+                                    interactionSource = interactionSource,
+                                    modifier = Modifier,
+                                    colors = colors,
+                                    shape = CircleShape,
+                                    focusedIndicatorLineThickness = 4.dp,
+                                    unfocusedIndicatorLineThickness = 0.dp,
+                                )
+                            }
                         },
                     )
                 },
@@ -324,7 +375,9 @@ fun SearchEditTextBox(
     enabled: Boolean = true,
     readOnly: Boolean = false,
     height: Dp = 40.dp,
+    placeholder: @Composable (() -> Unit)? = null,
     interactionSource: MutableInteractionSource = remember { MutableInteractionSource() },
+    glass: Boolean = false,
 ) {
     EditTextBox(
         value,
@@ -346,13 +399,15 @@ fun SearchEditTextBox(
             Icon(
                 imageVector = Icons.Default.Search,
                 contentDescription = stringResource(R.string.search),
-                tint = MaterialTheme.colorScheme.onPrimaryContainer,
+                tint = if (glass) Color.White.copy(alpha = 0.68f) else MaterialTheme.colorScheme.onPrimaryContainer,
             )
         },
         enabled = enabled,
         readOnly = readOnly,
         height = height,
+        placeholder = placeholder,
         interactionSource = interactionSource,
+        glass = glass,
     )
 }
 

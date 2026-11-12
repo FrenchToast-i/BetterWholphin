@@ -195,6 +195,19 @@ enum DisplayToggle{
   COMMUNITY_RATING = 2;
 }
 
+// Which controls the Liquid Glass top bar draws. The flags are inverted: hiding a control is the
+// opt-in, so an install that predates this message (and a fresh one) still gets the full bar
+// instead of an empty one, which is what defaulted-false booleans would give.
+message TopBarPreferences {
+  bool hide_home = 1;
+  bool hide_now_playing = 2;
+  bool hide_search = 3;
+  bool hide_settings = 4;
+  bool hide_profile = 5;
+  // "Play something": one press from any page starts something from the whole library.
+  bool hide_shuffle = 6;
+}
+
 message InterfacePreferences {
   ThemeSongVolume play_theme_songs = 1;
   bool remember_selected_tab = 2;
@@ -211,6 +224,25 @@ message InterfacePreferences {
   bool show_logos = 13;
   SearchPreferences search_preferences = 14;
   repeated DisplayToggle display_toggles = 15;
+  bool liquid_glass = 16;
+  TopBarPreferences top_bar_preferences = 17;
+  // Optional TMDB key for the discovery row. Stored only on this device; never logged or
+  // included in a crash report.
+  string tmdb_api_key = 18;
+  // 19 was the standalone Sports destination (an NFL guide of its own). Sports now lives where
+  // the tuner does: the Live TV page's Sports tab reads the guide the viewer's channels already
+  // publish, so there is no second schedule, no separate page and no switch to find.
+  reserved 19;
+  reserved "enable_sports";
+  // 20 was the viewer's own M3U sports playlist. A sports tuner now publishes its channels and
+  // fixtures into the viewer's Live TV, so the app reads the guide like any other channel and
+  // there is nothing to paste. Kept reserved so an existing store cannot be misread.
+  reserved 20;
+  reserved "sports_playlist_url";
+  // Minutes after midnight when the evening ends, used by the Tonight page to recommend something
+  // that can actually be finished. Values above 1440 mean after midnight (1470 = 00:30). Zero is
+  // "unset" and resolves to the 23:30 default so existing stores do not read as midnight.
+  int32 bedtime_minutes = 21;
 }
 
 message AdvancedPreferences {

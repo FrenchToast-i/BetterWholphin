@@ -3,6 +3,7 @@ package com.github.damontecres.wholphin.ui.playback
 import android.content.Context
 import android.media.MediaCodecList
 import android.os.Build
+import android.os.SystemClock
 import android.widget.Toast
 import androidx.annotation.OptIn
 import androidx.annotation.VisibleForTesting
@@ -35,6 +36,10 @@ import com.github.damontecres.wholphin.data.model.BaseItem
 import com.github.damontecres.wholphin.data.model.Chapter
 import com.github.damontecres.wholphin.data.model.Playlist
 import com.github.damontecres.wholphin.data.model.PlaylistItem
+import com.github.damontecres.wholphin.data.model.WatchParty
+import com.github.damontecres.wholphin.data.model.WatchPartyAction
+import com.github.damontecres.wholphin.data.model.WatchPartyEvent
+import com.github.damontecres.wholphin.data.model.WatchPartyJoin
 import com.github.damontecres.wholphin.data.model.SeriesTrackChoiceType
 import com.github.damontecres.wholphin.data.model.TrackIndex
 import com.github.damontecres.wholphin.mpv.MpvPlayer
@@ -52,8 +57,10 @@ import com.github.damontecres.wholphin.services.NavigationManager
 import com.github.damontecres.wholphin.services.PlayerFactory
 import com.github.damontecres.wholphin.services.PlaylistCreationResult
 import com.github.damontecres.wholphin.services.PlaylistCreator
+import com.github.damontecres.wholphin.R
 import com.github.damontecres.wholphin.services.RefreshRateService
 import com.github.damontecres.wholphin.services.ScreensaverService
+import com.github.damontecres.wholphin.services.SleepTimerPlan
 import com.github.damontecres.wholphin.services.StreamChoiceService
 import com.github.damontecres.wholphin.services.UserPreferencesService
 import com.github.damontecres.wholphin.ui.formatBitrate
@@ -69,8 +76,10 @@ import com.github.damontecres.wholphin.ui.seekForward
 import com.github.damontecres.wholphin.ui.showToast
 import com.github.damontecres.wholphin.util.ExceptionHandler
 import com.github.damontecres.wholphin.util.LoadingState
+import com.github.damontecres.wholphin.services.WatchPartyService
 import com.github.damontecres.wholphin.util.PlaybackItemState
 import com.github.damontecres.wholphin.util.TrackActivityPlaybackListener
+import com.github.damontecres.wholphin.util.WatchPartyProtocol
 import com.github.damontecres.wholphin.util.WholphinDispatchers
 import com.github.damontecres.wholphin.util.checkForSupport
 import com.github.damontecres.wholphin.util.mpv.mpvDeviceProfile
@@ -90,6 +99,7 @@ import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.catch
 import kotlinx.coroutines.flow.collectLatest
+import kotlinx.coroutines.flow.distinctUntilChanged
 import kotlinx.coroutines.flow.launchIn
 import kotlinx.coroutines.flow.map
 import kotlinx.coroutines.flow.onEach
@@ -100,6 +110,7 @@ import kotlinx.coroutines.sync.Mutex
 import kotlinx.coroutines.sync.withLock
 import kotlinx.coroutines.withContext
 import org.jellyfin.sdk.api.client.ApiClient
+import org.jellyfin.sdk.api.client.exception.InvalidStatusException
 import org.jellyfin.sdk.api.client.extensions.mediaInfoApi
 import org.jellyfin.sdk.api.client.extensions.mediaSegmentsApi
 import org.jellyfin.sdk.api.client.extensions.sessionApi
@@ -125,12 +136,32 @@ import org.jellyfin.sdk.model.extensions.inWholeTicks
 import org.jellyfin.sdk.model.extensions.ticks
 import org.jellyfin.sdk.model.serializer.toUUIDOrNull
 import timber.log.Timber
+import java.time.LocalDateTime
 import java.util.Date
 import java.util.UUID
 import kotlin.math.roundToInt
 import kotlin.time.Duration
 import kotlin.time.Duration.Companion.milliseconds
 import kotlin.time.Duration.Companion.seconds
+
+/** How often the party follower compares the transport with the room. */
+private const val PARTY_TICK_MS = 700L
+
+/**
+ * How far a pause/unpause position may differ before the player is corrected.
+ *
+ * Four seconds is deliberate: landing on the exact frame when the group resumes is worse than
+ * starting naturally when the two clients are already within a few seconds of each other.
+ */
+private const val PARTY_POSITION_TOLERANCE_MS = 4_000L
+
+/**
+ * How far the local position may drift from the clock before it counts as the viewer seeking.
+ *
+ * A jump of more than two seconds cannot be playback (which advances in real time), but a slow
+ * frame or a buffering stall easily costs less than one, so this never fires on its own.
+ */
+private const val PARTY_SEEK_TOLERANCE_MS = 2_000L
 
 /**
  * This [ViewModel] is responsible for playing media including moving through playlists (including next up episodes)
@@ -157,6 +188,7 @@ class PlaybackViewModel
         private val imageUrlService: ImageUrlService,
         private val screensaverService: ScreensaverService,
         private val musicService: MusicService,
+        private val watchPartyService: WatchPartyService,
         @Assisted private val destination: Destination,
     ) : ViewModel(),
         Player.Listener,
@@ -167,6 +199,12 @@ class PlaybackViewModel
         }
 
         val currentPlayer = MutableStateFlow<PlayerInstance?>(null)
+
+        /** The party this session is in, if any; the deck shows it while the controls are up. */
+        val watchParty = watchPartyService.party
+
+        /** A guest's title to open, from the group's queue. The page consumes it. */
+        val watchPartyJoinTarget = watchPartyService.joinTarget
 
         internal lateinit var player: Player
 
@@ -198,12 +236,40 @@ class PlaybackViewModel
 
         val subtitleSearchState = MutableStateFlow(SubtitleSearchState())
 
+        /**
+         * A running sleep timer, or null when there is none.
+         *
+         * Deliberately in the ViewModel rather than in the overlay: the controls hide themselves
+         * after a few seconds and the overlay leaves the composition for the queue and chapter
+         * decks, so a timer owned by the UI would quietly stop counting in exactly the moment it is
+         * needed. This outlives all of them and is cancelled with the playback session.
+         */
+        val sleepTimer = MutableStateFlow<SleepTimerState?>(null)
+        private var sleepTimerJob: Job? = null
+
+        /**
+         * True while the timer is stopping playback itself, so the end-of-media handler does not
+         * also open the next-up card or pop the page. Two paths popping means two pages.
+         */
+        private var stoppingForSleepTimer = false
+
         val currentUserDto = serverRepository.currentUserDtoFlow
 
         @VisibleForTesting
         val initJob: Job
 
         init {
+            watchPartyService.notePlaybackSessionStart()
+            // A party is followed from the same ViewModel that owns the player: the controls can
+            // hide, the overlay can leave the composition, and the group's commands still have to
+            // reach the transport.
+            viewModelScope.launch {
+                watchPartyService.actions.collect { action -> applyPartyAction(action) }
+            }
+            viewModelScope.launch {
+                watchPartyService.events.collect { event -> showPartyEvent(event) }
+            }
+            viewModelScope.launch { followParty() }
             initJob =
                 viewModelScope.launchIO {
                     addCloseable {
@@ -212,6 +278,74 @@ class PlaybackViewModel
                     }
                     init()
                 }
+        }
+
+        /**
+         * Start a timer for [minutes], or clear it with null.
+         *
+         * The countdown is wall-clock, not playback time: a viewer who pauses to answer the door
+         * should not get their evening back, and the last [SleepTimerPlan.FADE_SECONDS] ramp the
+         * volume down so the television does not fall silent mid-sentence.
+         */
+        fun setSleepTimer(minutes: Int?) {
+            sleepTimerJob?.cancel()
+            sleepTimerJob = null
+            restoreVolume()
+            if (minutes == null || minutes <= 0) {
+                sleepTimer.value = null
+                return
+            }
+            sleepTimerJob =
+                viewModelScope.launch {
+                    val total = minutes * 60
+                    sleepTimer.value = SleepTimerState(minutes, total)
+                    var remaining = total
+                    while (remaining > 0 && isActive) {
+                        delay(1_000)
+                        remaining--
+                        if (this@PlaybackViewModel::player.isInitialized) {
+                            // A backend that cannot fade must not take the session down with it.
+                            runCatching { player.volume = SleepTimerPlan.fadeVolume(remaining) }
+                        }
+                        sleepTimer.value = SleepTimerState(minutes, remaining)
+                    }
+                    if (!isActive) return@launch
+                    stopForSleepTimer()
+                }
+        }
+
+        /** Minutes to the configured bedtime, when it is close enough to offer as an option. */
+        fun minutesUntilBedtime(): Int? =
+            if (this::preferences.isInitialized) {
+                SleepTimerPlan.minutesUntilBedtime(
+                    LocalDateTime.now(),
+                    preferences.appPreferences.interfacePreferences.bedtimeMinutes,
+                )
+            } else {
+                null
+            }
+
+        private suspend fun stopForSleepTimer() {
+            stoppingForSleepTimer = true
+            if (this@PlaybackViewModel::player.isInitialized) {
+                // Stop, then leave, rather than pausing in place: a paused frame at bedtime keeps
+                // the panel lit on a still, and it would sit under the next-up card waiting to
+                // auto-play another episode at 3 AM. Leaving returns the viewer to the page with
+                // its Resume button, which is where they were.
+                runCatching {
+                    player.volume = 1f
+                    player.stop()
+                }
+            }
+            sleepTimer.value = null
+            showToast(context, context.getString(R.string.sleep_timer_ended), Toast.LENGTH_LONG)
+            navigationManager.goBack()
+        }
+
+        private fun restoreVolume() {
+            if (this@PlaybackViewModel::player.isInitialized) {
+                runCatching { player.volume = 1f }
+            }
         }
 
         private fun disconnectPlayer() {
@@ -408,11 +542,28 @@ class PlaybackViewModel
                 }
 
             val played =
-                play(
-                    firstItem,
-                    positionMs,
-                    forceTranscoding,
-                )
+                try {
+                    play(
+                        firstItem,
+                        positionMs,
+                        forceTranscoding,
+                    )
+                } catch (ex: InvalidStatusException) {
+                    // A live channel whose stream does not exist yet is a normal state, not a
+                    // failure: a sports tuner lists a game days before it starts serving it, so
+                    // the channel is real and the picture is not. Left unhandled this leaves the
+                    // page on its spinner forever, which reads as a crash.
+                    if (firstItem.item.type == BaseItemKind.TV_CHANNEL && ex.status == 404) {
+                        showToast(
+                            context,
+                            context.getString(R.string.live_tv_channel_not_streaming),
+                            Toast.LENGTH_LONG,
+                        )
+                        navigationManager.goBack()
+                        return
+                    }
+                    throw ex
+                }
             if (!played) {
                 playNextUp()
             }
@@ -619,7 +770,17 @@ class PlaybackViewModel
                     )
                     player.prepare()
                     player.play()
+                    // A guest opening the host's title must not resume a room that is paused:
+                    // playing it and then pausing would broadcast the unpause first.
+                    val party = watchPartyService.party.value
+                    if (party != null && !party.isHost && !party.playing) {
+                        player.pause()
+                        partyTick = null
+                    }
                 }
+                // A host publishes what it just started, so the other televisions open the same
+                // title at the same position. A guest's call is ignored by the service.
+                watchPartyService.onLocalPlaybackStarted(item.id, positionMs.coerceAtLeast(0L))
                 listenForSegments(item.id)
                 return@withContext true
             }
@@ -717,6 +878,9 @@ class PlaybackViewModel
                                 api.videosApi.getVideoStreamUrl(
                                     itemId = itemId,
                                     mediaSourceId = source.id,
+                                    // HDHomeRun Live TV needs the live stream id in the direct
+                                    // play URL; without it the tune falls back or spins.
+                                    liveStreamId = source.liveStreamId,
                                     static = true,
                                     tag = source.eTag,
                                     playSessionId = response.playSessionId,
@@ -1108,6 +1272,7 @@ class PlaybackViewModel
             }
 
         override fun onPlaybackStateChanged(playbackState: Int) {
+            if (stoppingForSleepTimer) return
             if (playbackState == Player.STATE_ENDED) {
                 Timber.v("Playback state is STATE_ENDED")
                 viewModelScope.launchDefault {
@@ -1416,6 +1581,25 @@ class PlaybackViewModel
 
         override fun onPlayerError(error: PlaybackException) {
             Timber.e(error, "Playback error")
+            val item = currentItem.item
+            // A pre-placed channel is a real channel whose stream does not exist yet, so the
+            // server rejects the segment (404/500) rather than the playback request. Falling
+            // back to transcoding cannot help — there is nothing to transcode — and it ended
+            // on the stack-trace page, which reads as the app breaking rather than as a game
+            // that has not started. Say which it is and go back to the card.
+            if (item.type == BaseItemKind.TV_CHANNEL &&
+                error.errorCode == PlaybackException.ERROR_CODE_IO_BAD_HTTP_STATUS
+            ) {
+                viewModelScope.launch(WholphinDispatchers.Main + ExceptionHandler()) {
+                    showToast(
+                        context,
+                        context.getString(R.string.live_tv_channel_not_streaming),
+                        Toast.LENGTH_LONG,
+                    )
+                    navigationManager.goBack()
+                }
+                return
+            }
             viewModelScope.launch(WholphinDispatchers.Main + ExceptionHandler()) {
                 state.value.currentPlayback?.let {
                     when (it.playMethod) {
@@ -1460,7 +1644,159 @@ class PlaybackViewModel
             Timber.v("release")
             disconnectPlayer()
             activityListener = null
+            // Leaving the player is leaving the party (a host stops the room rather than leaving
+            // the other televisions paused on a title nobody can restart). The service waits out
+            // a page replacement so a guest opening the host's title does not leave on the way.
+            if (watchPartyService.party.value != null) {
+                watchPartyService.leaveIfSessionUnchanged()
+            }
         }
+
+        /**
+         * Follow one of the group's commands.
+         *
+         * Echoes are harmless: a pause that lands on an already-paused player does nothing, and
+         * the ticker re-baselines after each command so it does not report the change back as if
+         * the viewer had pressed the key.
+         */
+        private suspend fun applyPartyAction(action: WatchPartyAction) =
+            withContext(WholphinDispatchers.Main) {
+                if (!::player.isInitialized) return@withContext
+                val tolerance = PARTY_POSITION_TOLERANCE_MS
+                partyCommandInFlight = true
+                try {
+                    when (action) {
+                        is WatchPartyAction.Play -> {
+                            action.positionMs?.let { position ->
+                                if (WatchPartyProtocol.needsSeek(player.currentPosition, position, tolerance)) {
+                                    player.seekTo(position)
+                                }
+                            }
+                            player.play()
+                        }
+
+                        is WatchPartyAction.Pause -> {
+                            action.positionMs?.let { position ->
+                                if (WatchPartyProtocol.needsSeek(player.currentPosition, position, tolerance)) {
+                                    player.seekTo(position)
+                                }
+                            }
+                            player.pause()
+                        }
+
+                        is WatchPartyAction.Seek -> {
+                            if (WatchPartyProtocol.needsSeek(player.currentPosition, action.positionMs)) {
+                                player.seekTo(action.positionMs)
+                            }
+                        }
+
+                        WatchPartyAction.Stop -> {
+                            player.pause()
+                            navigationManager.goBack()
+                        }
+                    }
+                } finally {
+                    partyCommandInFlight = false
+                    partyTick = null
+                }
+            }
+
+        /**
+         * Report the viewer's own transport changes to the room.
+         *
+         * Reading the player instead of every button is deliberate: pause/seek reach the player
+         * from the D-pad, the transport, media keys, headset buttons and the trickplay bar, and a
+         * party that only listens to one of those is a party that silently desyncs. The ticker
+         * compares intent (`playWhenReady`) and position against the previous tick, so a command
+         * applied from the group is already reflected in the baseline and is not echoed back.
+         */
+        private suspend fun followParty() {
+            // Only tick while a room exists: an idle playback session must not keep a timer
+            // running (and a test holding the player must be able to finish). Membership, not
+            // the party object, is what starts and stops the ticker — every member count and
+            // state change is a new immutable party, and keying on those would restart the
+            // clock on every command and never let it fire.
+            watchPartyService.party
+                .map { it != null }
+                .distinctUntilChanged()
+                .collectLatest { inParty ->
+                    partyTick = null
+                    if (!inParty) return@collectLatest
+                    // Cancelled by collectLatest when the room ends.
+                    while (true) {
+                        delay(PARTY_TICK_MS)
+                        tickParty()
+                    }
+                }
+        }
+
+        private fun tickParty() {
+            val party = watchPartyService.party.value ?: return
+            if (!::player.isInitialized || partyCommandInFlight || applyingPartyJoin || stoppingForSleepTimer) return
+            val playingItem = if (::itemId.isInitialized) itemId else null
+            if (party.itemId != null && playingItem != null && party.itemId != playingItem) return
+
+            val now = SystemClock.elapsedRealtime()
+            val tick =
+                PartyTick(
+                    at = now,
+                    positionMs = player.currentPosition,
+                    playing = player.playWhenReady,
+                )
+            val last = partyTick
+            partyTick = tick
+            if (last == null) return
+            if (tick.playing != last.playing) {
+                if (tick.playing) watchPartyService.requestUnpause() else watchPartyService.requestPause()
+                return
+            }
+            if (tick.playing && !player.isPlaying) return // buffering: the clock is not the viewer
+            val expected =
+                if (tick.playing) last.positionMs + (now - last.at) else last.positionMs
+            if (WatchPartyProtocol.needsSeek(tick.positionMs, expected, PARTY_SEEK_TOLERANCE_MS)) {
+                watchPartyService.requestSeek(tick.positionMs)
+            }
+        }
+
+        private suspend fun showPartyEvent(event: WatchPartyEvent) {
+            val text =
+                when (event) {
+                    is WatchPartyEvent.UserJoined -> context.getString(R.string.watch_party_user_joined, event.name)
+                    is WatchPartyEvent.UserLeft -> context.getString(R.string.watch_party_user_left, event.name)
+                    WatchPartyEvent.Ended -> context.getString(R.string.watch_party_ended)
+                    else -> return
+                }
+            showToast(context, text)
+        }
+
+        /** The player's dialog opened a room mid-playback: publish what is on screen now. */
+        fun startWatchPartyNow() {
+            if (::player.isInitialized && ::itemId.isInitialized) {
+                watchPartyService.onLocalPlaybackStarted(itemId, player.currentPosition)
+            }
+        }
+
+        /** A guest joined from inside the player; snap to the group's position. */
+        fun applyWatchPartyJoin(target: WatchPartyJoin) {
+            if (!::player.isInitialized) return
+            applyingPartyJoin = true
+            player.seekTo(target.positionMs)
+            if (target.playing) player.play() else player.pause()
+            applyingPartyJoin = false
+            partyTick = null
+        }
+
+        fun consumeWatchPartyJoin() = watchPartyService.consumeJoinTarget()
+
+        private data class PartyTick(
+            val at: Long,
+            val positionMs: Long,
+            val playing: Boolean,
+        )
+
+        private var partyTick: PartyTick? = null
+        private var partyCommandInFlight = false
+        private var applyingPartyJoin = false
 
         fun subscribeToWebSocket() {
             subscribeJob?.cancel()

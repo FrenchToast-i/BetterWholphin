@@ -35,6 +35,8 @@ import com.github.damontecres.wholphin.preferences.AppSwitchPreference
 import com.github.damontecres.wholphin.ui.components.DialogParams
 import com.github.damontecres.wholphin.ui.components.DialogPopup
 import com.github.damontecres.wholphin.ui.isNotNullOrBlank
+import com.github.damontecres.wholphin.ui.theme.GlassType
+import com.github.damontecres.wholphin.ui.theme.LocalLiquidGlass
 import com.github.damontecres.wholphin.ui.nav.Destination
 import com.github.damontecres.wholphin.util.ExceptionHandler
 import kotlinx.coroutines.launch
@@ -273,11 +275,21 @@ fun <T> ComposablePreference(
 
 val PreferenceTitleStyle: TextStyle
     @Composable @ReadOnlyComposable
-    get() = MaterialTheme.typography.titleSmall
+    get() =
+        if (LocalLiquidGlass.current) {
+            GlassType.settingsTitle
+        } else {
+            MaterialTheme.typography.titleSmall
+        }
 
 val PreferenceSummaryStyle: TextStyle
     @Composable @ReadOnlyComposable
-    get() = MaterialTheme.typography.bodySmall
+    get() =
+        if (LocalLiquidGlass.current) {
+            GlassType.settingsSummary
+        } else {
+            MaterialTheme.typography.bodySmall
+        }
 
 @Composable
 fun PreferenceTitle(

@@ -34,6 +34,7 @@ import com.github.damontecres.wholphin.services.StreamChoiceReason
 import com.github.damontecres.wholphin.services.StreamChoiceResult
 import com.github.damontecres.wholphin.services.StreamChoiceService
 import com.github.damontecres.wholphin.services.UserPreferencesService
+import com.github.damontecres.wholphin.services.WatchPartyService
 import com.github.damontecres.wholphin.test.TestTracks
 import com.github.damontecres.wholphin.test.movie
 import com.github.damontecres.wholphin.test.playlist
@@ -53,6 +54,8 @@ import io.mockk.verify
 import io.mockk.verifyOrder
 import kotlinx.coroutines.ExperimentalCoroutinesApi
 import kotlinx.coroutines.InternalCoroutinesApi
+import kotlinx.coroutines.flow.MutableSharedFlow
+import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.test.StandardTestDispatcher
 import kotlinx.coroutines.test.TestScope
 import kotlinx.coroutines.test.runTest
@@ -107,6 +110,13 @@ class PlaybackViewModelTests {
     private val mockImageUrlService = mockk<ImageUrlService>(relaxed = true)
     private val mockScreensaverService = mockk<ScreensaverService>(relaxed = true)
     private val mockMusicService = mockk<MusicService>(relaxed = true)
+    private val mockWatchPartyService =
+        mockk<WatchPartyService>(relaxed = true) {
+            every { party } returns MutableStateFlow(null)
+            every { joinTarget } returns MutableStateFlow(null)
+            every { actions } returns MutableSharedFlow()
+            every { events } returns MutableSharedFlow()
+        }
 
     private val mockUserLibraryApi = mockk<UserLibraryApi>()
     private val mockMediaInfoApi = mockk<MediaInfoApi>()
@@ -133,6 +143,7 @@ class PlaybackViewModelTests {
             imageUrlService = mockImageUrlService,
             screensaverService = mockScreensaverService,
             musicService = mockMusicService,
+            watchPartyService = mockWatchPartyService,
             destination = destination,
         )
 
@@ -291,6 +302,49 @@ class PlaybackViewModelTests {
             ?.let { throw it }
         return viewModel
     }
+
+    @Test
+    fun `Direct play includes the opened live stream ID`() =
+        runTest(testDispatcher) {
+            setupPreferences { cinemaMode = false }
+            val liveStreamId = "opened-live-stream"
+            val liveSource = mediaSource.copy(liveStreamId = liveStreamId)
+            coEvery { mockUserLibraryApi.getItem(movie.id) } returns successResponse(movie)
+            coEvery { mockMediaInfoApi.getPostedPlaybackInfo(any(), any()) } returns
+                successResponse(
+                    PlaybackInfoResponse(
+                        mediaSources = listOf(liveSource),
+                        playSessionId = playSessionId,
+                    ),
+                )
+            every {
+                mockVideosApi.getVideoStreamUrl(
+                    itemId = movie.id,
+                    mediaSourceId = liveSource.id,
+                    liveStreamId = liveSource.liveStreamId,
+                    static = true,
+                    tag = liveSource.eTag,
+                    playSessionId = playSessionId,
+                )
+            } returns videoStreamUrl
+
+            createViewModel(Destination.Playback(movie.id, 0L))
+
+            val mediaItem = slot<MediaItem>()
+            verify(exactly = 1) { mockPlayer.setMediaItem(capture(mediaItem), any<Long>()) }
+            val playbackUri = mediaItem.captured.localConfiguration?.uri
+            Assert.assertEquals(videoStreamUrl, playbackUri.toString())
+            verify(exactly = 1) {
+                mockVideosApi.getVideoStreamUrl(
+                    itemId = movie.id,
+                    mediaSourceId = liveSource.id,
+                    liveStreamId = liveStreamId,
+                    static = true,
+                    tag = liveSource.eTag,
+                    playSessionId = playSessionId,
+                )
+            }
+        }
 
     @Test
     fun `Play intro first`() =

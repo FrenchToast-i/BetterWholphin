@@ -42,7 +42,6 @@ import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import androidx.compose.ui.window.DialogProperties
 import androidx.tv.material3.Border
-import androidx.tv.material3.Button
 import androidx.tv.material3.ClickableSurfaceDefaults
 import androidx.tv.material3.Icon
 import androidx.tv.material3.MaterialTheme
@@ -54,9 +53,13 @@ import com.github.damontecres.wholphin.data.model.JellyfinUser
 import com.github.damontecres.wholphin.ui.Cards
 import com.github.damontecres.wholphin.ui.FontAwesome
 import com.github.damontecres.wholphin.ui.PreviewTvSpec
+import com.github.damontecres.wholphin.ui.components.Button
 import com.github.damontecres.wholphin.ui.components.DialogItem
 import com.github.damontecres.wholphin.ui.components.DialogPopup
 import com.github.damontecres.wholphin.ui.isNotNullOrBlank
+import com.github.damontecres.wholphin.ui.theme.GlassTokens
+import com.github.damontecres.wholphin.ui.theme.GlassType
+import com.github.damontecres.wholphin.ui.theme.LocalLiquidGlass
 import com.github.damontecres.wholphin.ui.theme.WholphinTheme
 import com.github.damontecres.wholphin.ui.toServerString
 import com.github.damontecres.wholphin.ui.tryRequestFocus
@@ -78,10 +81,11 @@ fun UserList(
 ) {
     var showDeleteDialog by remember { mutableStateOf<JellyfinUserAndImage?>(null) }
 
+    val glass = LocalLiquidGlass.current
     Column(
         modifier = modifier,
         horizontalAlignment = Alignment.CenterHorizontally,
-        verticalArrangement = Arrangement.spacedBy(24.dp),
+        verticalArrangement = Arrangement.spacedBy(if (glass) 16.dp else 24.dp),
     ) {
         // Horizontal scrollable list of user icons - centered
         Box(
@@ -94,8 +98,11 @@ fun UserList(
                 LaunchedEffect(Unit) { focusRequester.tryRequestFocus() }
             }
             LazyRow(
-                horizontalArrangement = Arrangement.spacedBy(24.dp), // Spacing to accommodate 20% scale
-                contentPadding = PaddingValues(horizontal = 48.dp, vertical = 16.dp), // Increased padding to accommodate 20% scale
+                horizontalArrangement =
+                    Arrangement.spacedBy(if (glass) GlassTokens.profileGap else 24.dp),
+                // Focus grows a disc by a few dp; the row needs just enough edge room for that
+                // and no more, or the first profile sits visibly inboard of the title.
+                contentPadding = PaddingValues(horizontal = if (glass) 4.dp else 48.dp, vertical = 8.dp),
                 modifier =
                     Modifier
                         .wrapContentWidth()
@@ -130,7 +137,8 @@ fun UserList(
         ) {
             Button(
                 onClick = { onSwitchServer.invoke() },
-                modifier = Modifier.width(200.dp), // Fixed width for consistency
+                glass = LocalLiquidGlass.current,
+                contentHeight = 44.dp,
             ) {
                 Row(
                     modifier = Modifier.fillMaxWidth(),
@@ -144,6 +152,7 @@ fun UserList(
                     )
                     Text(
                         text = stringResource(R.string.switch_servers),
+                        style = if (LocalLiquidGlass.current) GlassType.button else MaterialTheme.typography.labelLarge,
                         textAlign = TextAlign.Center,
                     )
                 }
@@ -193,19 +202,21 @@ private fun UserIconCard(
     modifier: Modifier = Modifier,
 ) {
     val interactionSource = remember { MutableInteractionSource() }
+    val glass = LocalLiquidGlass.current
     // Generate unique color for this user
     val userColor = rememberIdColor(user.user.id)
 
     // Track image loading errors
     var imageError by remember { mutableStateOf(false) }
 
-    // Card dimensions - circular card
-    val cardSize = Cards.serverUserCircle
+    // Card dimensions - circular card. Glass uses the smaller tvOS profile disc so a row of
+    // profiles fits inside the setup sheet instead of being clipped by its edge.
+    val cardSize = if (glass) GlassTokens.profileSize else Cards.serverUserCircle
 
     Column(
         modifier = modifier,
         horizontalAlignment = Alignment.CenterHorizontally,
-        verticalArrangement = Arrangement.spacedBy(24.dp),
+        verticalArrangement = Arrangement.spacedBy(if (glass) GlassTokens.profileLabelGap else 24.dp),
     ) {
         // Circular card with colored background
         Surface(
@@ -218,30 +229,41 @@ private fun UserIconCard(
                 ClickableSurfaceDefaults.colors(
                     containerColor =
                         if (isCurrentUser) {
-                            userColor.copy(alpha = 0.7f)
+                            userColor.copy(alpha = if (glass) 0.46f else 0.7f)
                         } else {
-                            userColor.copy(alpha = 0.5f)
+                            userColor.copy(alpha = if (glass) 0.34f else 0.5f)
                         },
                     focusedContainerColor =
                         if (isCurrentUser) {
-                            userColor.copy(alpha = 0.9f)
+                            userColor.copy(alpha = if (glass) 0.66f else 0.9f)
                         } else {
-                            userColor.copy(alpha = 0.7f)
+                            userColor.copy(alpha = if (glass) 0.56f else 0.7f)
                         },
                 ),
             border =
                 ClickableSurfaceDefaults.border(
+                    // The signed-in profile keeps a quiet ring at rest, the way a tvOS profile
+                    // shows which viewer is active before anything is focused.
+                    border =
+                        if (glass && isCurrentUser) {
+                            Border(
+                                border = BorderStroke(2.dp, Color.White.copy(alpha = 0.82f)),
+                                shape = CircleShape,
+                            )
+                        } else {
+                            Border.None
+                        },
                     focusedBorder =
                         Border(
                             border =
                                 BorderStroke(
-                                    width = 3.dp,
-                                    color = MaterialTheme.colorScheme.onSurface,
+                                    width = if (glass) 2.5.dp else 3.dp,
+                                    color = if (glass) Color.White else MaterialTheme.colorScheme.onSurface,
                                 ),
                             shape = CircleShape,
                         ),
                 ),
-            scale = ClickableSurfaceDefaults.scale(focusedScale = 1.2f),
+            scale = ClickableSurfaceDefaults.scale(focusedScale = if (glass) 1.08f else 1.2f),
         ) {
             Box(
                 modifier = Modifier.fillMaxSize(),
@@ -269,10 +291,14 @@ private fun UserIconCard(
                     Text(
                         text = firstLetter,
                         style =
-                            MaterialTheme.typography.displayLarge.copy(
-                                fontWeight = FontWeight.Bold,
-                            ),
-                        color = MaterialTheme.colorScheme.onSurface,
+                            if (glass) {
+                                GlassType.pageTitle.copy(fontSize = 40.sp, lineHeight = 44.sp)
+                            } else {
+                                MaterialTheme.typography.displayLarge.copy(
+                                    fontWeight = FontWeight.Bold,
+                                )
+                            },
+                        color = if (glass) Color.White else MaterialTheme.colorScheme.onSurface,
                         textAlign = TextAlign.Center,
                     )
                 }
@@ -282,9 +308,9 @@ private fun UserIconCard(
         // Username below the card
         Text(
             text = user.user.name ?: user.user.id.toString(),
-            style = MaterialTheme.typography.bodyLarge,
+            style = if (glass) GlassType.tab else MaterialTheme.typography.bodyLarge,
             fontWeight = FontWeight.Bold,
-            color = MaterialTheme.colorScheme.onSurface,
+            color = if (glass) Color.White else MaterialTheme.colorScheme.onSurface,
             textAlign = TextAlign.Center,
             maxLines = 2,
             overflow = TextOverflow.Ellipsis,
@@ -364,17 +390,18 @@ private fun AddUserCard(
     modifier: Modifier = Modifier,
 ) {
     val interactionSource = remember { MutableInteractionSource() }
+    val glass = LocalLiquidGlass.current
 
     // Use a neutral gray color for the add user card
-    val addUserColor = MaterialTheme.colorScheme.surfaceVariant
+    val addUserColor = if (glass) Color.White.copy(alpha = 0.12f) else MaterialTheme.colorScheme.surfaceVariant
 
     // Card dimensions - circular card (same as user cards)
-    val cardSize = Cards.height2x3 * 0.75f // ~120dp
+    val cardSize = if (glass) GlassTokens.profileSize else Cards.height2x3 * 0.75f
 
     Column(
         modifier = modifier,
         horizontalAlignment = Alignment.CenterHorizontally,
-        verticalArrangement = Arrangement.spacedBy(24.dp), // Increased to accommodate 20% scale
+        verticalArrangement = Arrangement.spacedBy(if (glass) GlassTokens.profileLabelGap else 24.dp),
     ) {
         // Circular card with colored background
         Surface(
@@ -384,8 +411,10 @@ private fun AddUserCard(
             shape = ClickableSurfaceDefaults.shape(shape = CircleShape),
             colors =
                 ClickableSurfaceDefaults.colors(
-                    containerColor = addUserColor.copy(alpha = 0.4f),
-                    focusedContainerColor = addUserColor.copy(alpha = 0.6f),
+                    containerColor = if (glass) addUserColor else addUserColor.copy(alpha = 0.4f),
+                    contentColor = if (glass) Color.White else MaterialTheme.colorScheme.onSurface,
+                    focusedContainerColor = if (glass) Color.White else addUserColor.copy(alpha = 0.6f),
+                    focusedContentColor = if (glass) Color.Black else MaterialTheme.colorScheme.onSurface,
                 ),
             border =
                 ClickableSurfaceDefaults.border(
@@ -393,13 +422,13 @@ private fun AddUserCard(
                         Border(
                             border =
                                 BorderStroke(
-                                    width = 3.dp,
-                                    color = MaterialTheme.colorScheme.onSurface,
+                                    width = if (glass) 2.dp else 3.dp,
+                                    color = if (glass) Color.Black.copy(alpha = 0.35f) else MaterialTheme.colorScheme.onSurface,
                                 ),
                             shape = CircleShape,
                         ),
                 ),
-            scale = ClickableSurfaceDefaults.scale(focusedScale = 1.2f),
+            scale = ClickableSurfaceDefaults.scale(focusedScale = if (glass) 1.10f else 1.2f),
         ) {
             Box(
                 modifier = Modifier.fillMaxSize(),
@@ -408,7 +437,7 @@ private fun AddUserCard(
                 Icon(
                     imageVector = Icons.Default.Add,
                     contentDescription = stringResource(R.string.add_user),
-                    tint = MaterialTheme.colorScheme.onSurface,
+                    tint = Color.Unspecified,
                     modifier = Modifier.size(cardSize * 0.4f), // Size of the + icon
                 )
             }
@@ -418,10 +447,14 @@ private fun AddUserCard(
         Text(
             text = stringResource(R.string.add_user),
             style =
-                MaterialTheme.typography.bodyLarge.copy(
-                    fontWeight = androidx.compose.ui.text.font.FontWeight.Bold,
-                ),
-            color = MaterialTheme.colorScheme.onSurface,
+                if (glass) {
+                    GlassType.tab
+                } else {
+                    MaterialTheme.typography.bodyLarge.copy(
+                        fontWeight = androidx.compose.ui.text.font.FontWeight.Bold,
+                    )
+                },
+            color = if (glass) Color.White else MaterialTheme.colorScheme.onSurface,
             textAlign = TextAlign.Center,
             maxLines = 2,
             overflow = TextOverflow.Ellipsis,

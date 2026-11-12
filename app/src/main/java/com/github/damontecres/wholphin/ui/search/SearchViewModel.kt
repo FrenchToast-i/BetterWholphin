@@ -10,6 +10,7 @@ import com.github.damontecres.wholphin.data.model.BaseItem
 import com.github.damontecres.wholphin.data.model.DiscoverItem
 import com.github.damontecres.wholphin.data.model.SeerrItemType
 import com.github.damontecres.wholphin.preferences.AppPreferences
+import com.github.damontecres.wholphin.services.BackdropService
 import com.github.damontecres.wholphin.preferences.updateSearchPreferences
 import com.github.damontecres.wholphin.services.FavoriteWatchManager
 import com.github.damontecres.wholphin.services.KeyValueService
@@ -17,6 +18,7 @@ import com.github.damontecres.wholphin.services.LiveTvService
 import com.github.damontecres.wholphin.services.MediaManagementService
 import com.github.damontecres.wholphin.services.NavDrawerService
 import com.github.damontecres.wholphin.services.NavigationManager
+import com.github.damontecres.wholphin.services.RecentSearchService
 import com.github.damontecres.wholphin.services.SeerrService
 import com.github.damontecres.wholphin.services.ServerReportService
 import com.github.damontecres.wholphin.services.UserPreferencesService
@@ -42,6 +44,7 @@ import com.github.damontecres.wholphin.util.WholphinDispatchers
 import dagger.hilt.android.lifecycle.HiltViewModel
 import dagger.hilt.android.qualifiers.ApplicationContext
 import kotlinx.coroutines.CancellationException
+import kotlinx.coroutines.Job
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.SharingStarted
 import kotlinx.coroutines.flow.StateFlow
@@ -79,6 +82,8 @@ class SearchViewModel
         private val liveTvService: LiveTvService,
         private val keyValueService: KeyValueService,
         private val navDrawerService: NavDrawerService,
+        private val recentSearchService: RecentSearchService,
+        private val backdropService: BackdropService,
     ) : ViewModel(),
         ContextMenuProvider {
         val seerrActive =
@@ -91,6 +96,9 @@ class SearchViewModel
         private val _state = MutableStateFlow(SearchState())
         val state: StateFlow<SearchState> = _state
         val position = MutableStateFlow(RowColumn(0, 0))
+
+        /** The empty page's history, owned by a singleton so a write outlives this ViewModel. */
+        val recentSearches: StateFlow<List<String>> = recentSearchService.searches
 
         private var currentQuery: String? = null
         private var combinedMode = false
@@ -322,6 +330,30 @@ class SearchViewModel
                     _state.update { it.copy(combinedResults = SearchResult.Error(ex)) }
                 }
             }
+        }
+
+        /**
+         * Follow the focused result with the shell's backdrop.
+         *
+         * Search is the one page whose content is entirely chosen by the viewer in the moment:
+         * every other grid hands its focused card to the backdrop, and without this the whole
+         * page — bar, field, result cards — kept refracting whatever was focused before Search
+         * opened, which reads as a background that failed to update.
+         */
+        fun updateBackdrop(item: BaseItem) {
+            viewModelScope.launchIO { backdropService.submit(item) }
+        }
+
+        fun updateBackdrop(item: DiscoverItem) {
+            viewModelScope.launchIO { backdropService.submit(item) }
+        }
+
+        fun recordSearch(query: String) {
+            recentSearchService.record(query)
+        }
+
+        fun clearRecentSearches() {
+            recentSearchService.clear()
         }
 
         fun setCombinedResults(enabled: Boolean) {

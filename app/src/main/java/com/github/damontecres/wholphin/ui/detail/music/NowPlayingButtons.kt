@@ -21,6 +21,7 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.focus.FocusRequester
 import androidx.compose.ui.focus.onFocusChanged
+import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.dp
@@ -45,6 +46,7 @@ import com.github.damontecres.wholphin.ui.playback.overlay.PlaybackAction
 import com.github.damontecres.wholphin.ui.playback.overlay.PlaybackButton
 import com.github.damontecres.wholphin.ui.playback.overlay.PlaybackButtons
 import com.github.damontecres.wholphin.ui.playback.overlay.buttonSpacing
+import com.github.damontecres.wholphin.ui.theme.LocalLiquidGlass
 import com.github.damontecres.wholphin.ui.theme.PreviewInteractionSource
 import com.github.damontecres.wholphin.ui.theme.WholphinTheme
 import kotlin.time.Duration.Companion.seconds
@@ -157,6 +159,10 @@ fun ShuffleButton(
 ) {
     val selectedColor = MaterialTheme.colorScheme.border
     val focused by interactionSource.collectIsFocusedAsState()
+    // On glass the focus fill is white, so a white glyph disappears. Every focused key takes the
+    // dark glyph of a selected pill; the state (active/inactive) is already carried by the fill
+    // before focus and by the container afterwards.
+    val glass = LocalLiquidGlass.current
     Button(
         enabled = enabled,
         onClick = onClick,
@@ -180,6 +186,7 @@ fun ShuffleButton(
             textAlign = TextAlign.Center,
             color =
                 when {
+                    glass && focused -> Color.Black
                     focused && active -> MaterialTheme.colorScheme.onSurface
                     focused && !active -> MaterialTheme.colorScheme.surface
                     !focused && active -> MaterialTheme.colorScheme.onSurface
@@ -204,6 +211,7 @@ fun RepeatButton(
 ) {
     val selectedColor = MaterialTheme.colorScheme.border
     val focused by interactionSource.collectIsFocusedAsState()
+    val glass = LocalLiquidGlass.current
     Button(
         enabled = enabled,
         onClick = onClick,
@@ -232,9 +240,11 @@ fun RepeatButton(
                 textAlign = TextAlign.Center,
                 color =
                     if (focused) {
-                        when (repeatMode) {
-                            Player.REPEAT_MODE_ALL -> MaterialTheme.colorScheme.onSurface
-                            Player.REPEAT_MODE_ONE -> MaterialTheme.colorScheme.onSurface
+                        when {
+                            // White focus fill on glass: the glyph has to go dark.
+                            glass -> Color.Black
+                            repeatMode == Player.REPEAT_MODE_ALL || repeatMode == Player.REPEAT_MODE_ONE ->
+                                MaterialTheme.colorScheme.onSurface
                             else -> MaterialTheme.colorScheme.surface
                         }
                     } else {

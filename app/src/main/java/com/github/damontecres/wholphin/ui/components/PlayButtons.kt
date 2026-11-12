@@ -47,6 +47,7 @@ import androidx.compose.ui.platform.LocalResources
 import androidx.compose.ui.res.painterResource
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.text.style.TextAlign
+import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import androidx.tv.material3.Icon
@@ -57,6 +58,8 @@ import com.github.damontecres.wholphin.R
 import com.github.damontecres.wholphin.data.model.Trailer
 import com.github.damontecres.wholphin.ui.FontAwesome
 import com.github.damontecres.wholphin.ui.PreviewTvSpec
+import com.github.damontecres.wholphin.ui.theme.GlassType
+import com.github.damontecres.wholphin.ui.theme.LocalLiquidGlass
 import com.github.damontecres.wholphin.ui.data.ChooseVersionParams
 import com.github.damontecres.wholphin.ui.data.SortAndDirection
 import com.github.damontecres.wholphin.ui.ifElse
@@ -89,6 +92,8 @@ fun ExpandablePlayButtons(
     chooseVersionParams: ChooseVersionParams?,
     buttonOnFocusChanged: (FocusState) -> Unit,
     modifier: Modifier = Modifier,
+    /** Opens the watch party hub for this title; null on pages that cannot host one. */
+    watchTogetherOnClick: (() -> Unit)? = null,
 ) {
     val resources = LocalResources.current
     val firstFocus = remember { FocusRequester() }
@@ -117,6 +122,7 @@ fun ExpandablePlayButtons(
                 resume = resumePosition,
                 icon = Icons.Default.PlayArrow,
                 onClick = playOnClick,
+                prominent = true,
                 modifier =
                     Modifier
                         .onFocusChanged(buttonOnFocusChanged)
@@ -130,9 +136,22 @@ fun ExpandablePlayButtons(
                     resume = Duration.ZERO,
                     icon = Icons.Default.Refresh,
                     onClick = playOnClick,
+                    prominent = true,
                     modifier = Modifier.onFocusChanged(buttonOnFocusChanged),
                     mirrorIcon = true,
                     interactionSource = restartInteractionSource,
+                )
+            }
+        }
+
+        val onWatchTogether = watchTogetherOnClick
+        if (onWatchTogether != null) {
+            item("watch_together") {
+                ExpandableFaButton(
+                    title = R.string.watch_together,
+                    iconStringRes = R.string.fa_users,
+                    onClick = { onWatchTogether() },
+                    modifier = Modifier.onFocusChanged(buttonOnFocusChanged),
                 )
             }
         }
@@ -243,6 +262,7 @@ fun ExpandablePlayButton(
     interactionSource: MutableInteractionSource = remember { MutableInteractionSource() },
     mirrorIcon: Boolean = false,
     enabled: Boolean = true,
+    prominent: Boolean = false,
 ) = ExpandablePlayButton(
     title = title,
     resume = resume,
@@ -260,6 +280,7 @@ fun ExpandablePlayButton(
     modifier = modifier,
     interactionSource = interactionSource,
     enabled = enabled,
+    prominent = prominent,
 )
 
 @Composable
@@ -272,6 +293,7 @@ fun ExpandablePlayButton(
     interactionSource: MutableInteractionSource = remember { MutableInteractionSource() },
     mirrorIcon: Boolean = false,
     enabled: Boolean = true,
+    prominent: Boolean = false,
 ) = ExpandablePlayButton(
     title = title,
     resume = resume,
@@ -289,6 +311,7 @@ fun ExpandablePlayButton(
     modifier = modifier,
     interactionSource = interactionSource,
     enabled = enabled,
+    prominent = prominent,
 )
 
 @Composable
@@ -300,8 +323,11 @@ fun ExpandablePlayButton(
     modifier: Modifier = Modifier,
     interactionSource: MutableInteractionSource = remember { MutableInteractionSource() },
     enabled: Boolean = true,
+    /** The page's main action, drawn as the lit white capsule rather than a smoked disc. */
+    prominent: Boolean = false,
 ) {
     val isFocused = interactionSource.collectIsFocusedAsState().value
+    val glass = LocalLiquidGlass.current
     Button(
         onClick = { onClick.invoke(resume) },
         enabled = enabled,
@@ -309,25 +335,31 @@ fun ExpandablePlayButton(
             modifier.requiredSizeIn(
                 minWidth = MinButtonSize,
                 minHeight = MinButtonSize,
-                maxHeight = MinButtonSize,
+                maxHeight = if (glass && prominent) 44.dp else MinButtonSize,
             ),
-        contentPadding = DefaultButtonPadding,
+        contentPadding = if (glass && prominent) PaddingValues(horizontal = 18.dp) else DefaultButtonPadding,
+        contentHeight = if (glass && prominent) 44.dp else MinButtonSize,
+        glassProminent = glass && prominent,
+        glassFilled = glass && !prominent,
         interactionSource = interactionSource,
     ) {
         Box(
             contentAlignment = Alignment.Center,
             modifier =
                 Modifier
-                    .padding(start = 2.dp)
+                    .padding(start = if (glass && prominent) 0.dp else 2.dp)
                     .height(MinButtonSize),
         ) {
             icon.invoke(this)
         }
-        AnimatedVisibility(isFocused) {
+        // A page's main action is always labelled on glass. Unlabelled discs are fine for
+        // secondary tools, but the control the viewer pressed the page to reach should say what
+        // it does without waiting to be focused.
+        AnimatedVisibility(isFocused || (glass && prominent)) {
             Spacer(Modifier.size(8.dp))
             Text(
                 text = stringResource(title),
-                style = MaterialTheme.typography.titleSmall,
+                style = if (glass) GlassType.button else MaterialTheme.typography.titleSmall,
                 modifier = Modifier.padding(end = 4.dp),
             )
         }
@@ -346,19 +378,27 @@ fun ExpandableFaButton(
     interactionSource: MutableInteractionSource = remember { MutableInteractionSource() },
     iconColor: Color = Color.Unspecified,
     enabled: Boolean = true,
+    size: Dp = MinButtonSize,
+    glass: Boolean = false,
+    expandLabel: Boolean = true,
 ) {
     val isFocused = interactionSource.collectIsFocusedAsState().value
+    val liquidGlass = LocalLiquidGlass.current
     Button(
         onClick = onClick,
         enabled = enabled,
         modifier =
             modifier.requiredSizeIn(
-                minWidth = MinButtonSize,
-                minHeight = MinButtonSize,
-                maxHeight = MinButtonSize,
+                minWidth = size,
+                minHeight = size,
+                maxHeight = size,
             ),
         contentPadding = DefaultButtonPadding,
         interactionSource = interactionSource,
+        glass = glass,
+        // Outside an existing pane, a bare glyph on artwork is unreadable. The smoked disc is
+        // the secondary action's material, matching the hero's Details button.
+        glassFilled = liquidGlass && !glass,
     ) {
         Box(
             modifier =
@@ -375,10 +415,10 @@ fun ExpandableFaButton(
                 modifier = Modifier.align(Alignment.Center),
             )
         }
-        AnimatedVisibility(isFocused) {
+        AnimatedVisibility(isFocused && expandLabel) {
             Text(
                 text = stringResource(title),
-                style = MaterialTheme.typography.titleSmall,
+                style = if (liquidGlass) GlassType.button else MaterialTheme.typography.titleSmall,
                 modifier = Modifier.padding(end = 4.dp),
             )
         }
@@ -430,11 +470,15 @@ fun DeleteButton(
 ) {
     var showDeleteDialog by remember { mutableStateOf(false) }
     val focused by interactionSource.collectIsFocusedAsState()
+    val glass = LocalLiquidGlass.current
     val iconTint by
         animateColorAsState(
             targetValue =
                 if (focused) {
                     Color.Red.copy(alpha = .8f)
+                } else if (glass) {
+                    // On a smoked glass disc the theme's onSurface is nearly black.
+                    Color.White.copy(alpha = 0.90f)
                 } else {
                     MaterialTheme.colorScheme.onSurface.copy(
                         alpha = 0.8f,

@@ -99,6 +99,7 @@ class AppPreferencesSerializer
                                 showClock = AppPreference.ShowClock.defaultValue
                                 backdropStyle = AppPreference.BackdropStylePref.defaultValue
                                 showLogos = AppPreference.ShowLogos.defaultValue
+                                bedtimeMinutes = AppPreference.Bedtime.defaultValue
                                 clearDisplayToggles()
                                 addAllDisplayToggles(AppPreference.DisplayTogglesPref.defaultValue)
 

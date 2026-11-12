@@ -1,5 +1,7 @@
 package com.github.damontecres.wholphin.util
 
+import com.github.damontecres.wholphin.services.TappedSocketConnection
+import com.github.damontecres.wholphin.services.WatchPartySocketTap
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.withContext
 import org.jellyfin.sdk.api.client.ApiClient
@@ -64,6 +66,7 @@ class CoroutineContextApiClient(
 
 class CoroutineContextApiClientFactory(
     private val factory: OkHttpFactory,
+    private val socketTap: WatchPartySocketTap,
     private val coroutineContext: CoroutineContext = WholphinDispatchers.IO,
 ) : ApiClientFactory,
     SocketConnectionFactory {
@@ -83,5 +86,5 @@ class CoroutineContextApiClientFactory(
     override fun create(
         clientOptions: HttpClientOptions,
         scope: CoroutineScope,
-    ): SocketConnection = factory.create(clientOptions, scope)
+    ): SocketConnection = TappedSocketConnection(factory.create(clientOptions, scope), socketTap, scope)
 }

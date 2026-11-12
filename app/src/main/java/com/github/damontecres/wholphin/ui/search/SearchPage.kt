@@ -1,16 +1,13 @@
 package com.github.damontecres.wholphin.ui.search
 
 import android.widget.Toast
-import androidx.activity.compose.BackHandler
 import androidx.annotation.StringRes
 import androidx.compose.animation.AnimatedVisibility
-import androidx.compose.animation.expandHorizontally
 import androidx.compose.animation.expandVertically
-import androidx.compose.animation.fadeIn
-import androidx.compose.animation.fadeOut
-import androidx.compose.animation.shrinkHorizontally
 import androidx.compose.animation.shrinkVertically
 import androidx.compose.foundation.focusGroup
+import androidx.compose.foundation.rememberScrollState
+import androidx.compose.foundation.verticalScroll
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
@@ -22,30 +19,23 @@ import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.itemsIndexed
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.DisposableEffect
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableIntStateOf
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
+import androidx.compose.runtime.rememberUpdatedState
 import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
-import androidx.compose.ui.focus.FocusDirection
 import androidx.compose.ui.focus.FocusRequester
 import androidx.compose.ui.focus.focusRequester
-import androidx.compose.ui.focus.focusRestorer
 import androidx.compose.ui.focus.onFocusChanged
 import androidx.compose.ui.graphics.Color
-import androidx.compose.ui.input.key.Key
-import androidx.compose.ui.input.key.KeyEventType
-import androidx.compose.ui.input.key.key
-import androidx.compose.ui.input.key.onPreviewKeyEvent
-import androidx.compose.ui.input.key.type
 import androidx.compose.ui.platform.LocalContext
-import androidx.compose.ui.platform.LocalFocusManager
-import androidx.compose.ui.platform.LocalSoftwareKeyboardController
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.unit.dp
 import androidx.hilt.lifecycle.viewmodel.compose.hiltViewModel
@@ -60,11 +50,8 @@ import com.github.damontecres.wholphin.ui.cards.DiscoverItemCard
 import com.github.damontecres.wholphin.ui.cards.GridCard
 import com.github.damontecres.wholphin.ui.cards.ItemRow
 import com.github.damontecres.wholphin.ui.cards.ItemRowTitle
-import com.github.damontecres.wholphin.ui.components.ExpandableFaButton
-import com.github.damontecres.wholphin.ui.components.SearchEditTextBox
 import com.github.damontecres.wholphin.ui.components.TabDetails
 import com.github.damontecres.wholphin.ui.components.TabRow
-import com.github.damontecres.wholphin.ui.components.VoiceSearchButton
 import com.github.damontecres.wholphin.ui.components.rememberContextMenu
 import com.github.damontecres.wholphin.ui.data.RowColumn
 import com.github.damontecres.wholphin.ui.detail.CardGrid
@@ -73,11 +60,16 @@ import com.github.damontecres.wholphin.ui.detail.GridItemDetails
 import com.github.damontecres.wholphin.ui.detail.livetv.ProgramDialog
 import com.github.damontecres.wholphin.ui.nav.Destination
 import com.github.damontecres.wholphin.ui.onMain
+import com.github.damontecres.wholphin.ui.theme.GlassTokens
+import com.github.damontecres.wholphin.ui.theme.GlassType
+import com.github.damontecres.wholphin.ui.theme.LocalLiquidGlass
 import com.github.damontecres.wholphin.ui.titleStringRes
 import com.github.damontecres.wholphin.ui.tryRequestFocus
 import com.github.damontecres.wholphin.util.WholphinDispatchers
 import kotlinx.coroutines.delay
+import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.withContext
+import kotlinx.coroutines.withTimeoutOrNull
 import org.jellyfin.sdk.model.api.BaseItemKind
 import timber.log.Timber
 import kotlin.time.Duration.Companion.milliseconds
@@ -95,10 +87,10 @@ fun SearchPage(
     modifier: Modifier = Modifier,
     viewModel: SearchViewModel = hiltViewModel(),
 ) {
-    val focusManager = LocalFocusManager.current
-    val keyboardController = LocalSoftwareKeyboardController.current
+    val glass = LocalLiquidGlass.current
     val state by viewModel.state.collectAsState()
     val programDialogState by viewModel.programDialogState.collectAsState()
+    val recentSearches by viewModel.recentSearches.collectAsState()
 
     // Start with current preferences, but collect updates when view options change
     val prefs =
@@ -110,8 +102,21 @@ fun SearchPage(
 
 //    val query = rememberTextFieldState()
     var query by rememberSaveable { mutableStateOf(initialQuery) }
+    // The field's value is read when the page is disposed (leaving Search is the moment the
+    // viewer has committed to a query), so the callback must not close over a stale one.
+    val latestQuery by rememberUpdatedState(query)
+    DisposableEffect(Unit) {
+        onDispose { viewModel.recordSearch(latestQuery) }
+    }
     val focusRequesters =
         remember(state.includedSearchableTypes.size) { List(RESULTS_START + state.includedSearchableTypes.size) { FocusRequester() } }
+    // The discovery shelf that appears where the library had nothing. It is the only focusable
+    // content on an otherwise empty results page.
+    val tmdbShelfFocusRequester = remember { FocusRequester() }
+    // A fixture the query named. The guide's card is what can actually play a game, so this is
+    // the one result on an empty page that leads straight to the thing the viewer asked for.
+    // The newest remembered query, so down from the field lands on a search rather than on Clear.
+    val recentSearchFocusRequester = remember { FocusRequester() }
 
     val seerrActive by viewModel.seerrActive.collectAsState()
     var selectedTab by rememberSaveable(seerrActive, state.discoverEnabled) { mutableIntStateOf(0) }
@@ -139,6 +144,7 @@ fun SearchPage(
     fun triggerImmediateSearch(searchQuery: String) {
         immediateSearchQuery = searchQuery
         searchClicked = true
+        viewModel.recordSearch(searchQuery)
         viewModel.search(searchQuery, combinedMode)
     }
 
@@ -222,6 +228,27 @@ fun SearchPage(
                 } else {
                     listOf(state.seerrResults)
                 }
+            // A search that finished with nothing in the library has no row to hand focus to,
+            // and the first-row request below then lands on a row that drew nothing: the search
+            // key would leave the viewer with no focus on the page at all, while the TMDB shelf
+            // sits on screen and unreachable. That shelf is the only focusable thing there, so
+            // it takes the focus.
+            val everythingEmpty =
+                results.isNotEmpty() &&
+                    results.all { result ->
+                        when (result) {
+                            is SearchResult.Success -> result.items.isEmpty()
+                            is SearchResult.SuccessSeerr -> result.items.isEmpty()
+                            else -> false
+                        }
+                    }
+            if (everythingEmpty) {
+                // The discovery shelf is the only focusable thing on the page, so the handoff
+                // goes straight to it. Without it the request targets result row 0, which drew
+                // nothing, and the posters sit on screen unreachable.
+                onMain { tmdbShelfFocusRequester.tryRequestFocus() }
+                return@withContext
+            }
             val firstSuccess =
                 results.indexOfFirst { it is SearchResult.Success || it is SearchResult.SuccessSeerr }
             if (firstSuccess >= 0) {
@@ -259,86 +286,63 @@ fun SearchPage(
         modifier = modifier.fillMaxSize(),
         verticalArrangement = Arrangement.spacedBy(12.dp),
     ) {
-        Box(
-            contentAlignment = Alignment.Center,
+        Column(
+            // Search opens on an empty screen, so glass mode composes it as a centred invitation:
+            // a page title, a line explaining what is searchable, and one wide field. Left-aligning
+            // it made the page look like a form that had lost its results.
+            horizontalAlignment = Alignment.CenterHorizontally,
             modifier = Modifier.fillMaxWidth(),
         ) {
-            var isSearchActive by remember { mutableStateOf(false) }
-            var isTextFieldFocused by remember { mutableStateOf(false) }
             val textFieldFocusRequester = remember { FocusRequester() }
 
-            BackHandler(isTextFieldFocused) {
-                when {
-                    isSearchActive -> {
-                        isSearchActive = false
-                        keyboardController?.hide()
-                    }
-
-                    else -> {
-                        focusManager.moveFocus(FocusDirection.Next)
-                    }
+            // Opening Search should put the caret in the field. Navigating in from the bar used
+            // to leave focus on the bar capsule, so the first thing a viewer had to do was find
+            // the field with the D-pad before they could type.
+            LaunchedEffect(glass) {
+                if (glass) {
+                    textFieldFocusRequester.tryRequestFocus()
                 }
             }
 
-            Row(
-                horizontalArrangement = Arrangement.spacedBy(0.dp),
-                verticalAlignment = Alignment.CenterVertically,
-                modifier =
-                    Modifier
-                        .padding(start = 16.dp, end = 16.dp, top = 16.dp)
-                        .focusGroup()
-                        .focusRestorer(textFieldFocusRequester)
-                        .focusRequester(focusRequesters[SEARCH_ROW]),
-            ) {
-                AnimatedVisibility(
-                    visible = voiceSearchButtonVisible,
-                    enter = fadeIn() + expandHorizontally(expandFrom = Alignment.End),
-                    exit = fadeOut() + shrinkHorizontally(shrinkTowards = Alignment.End),
+            if (glass) {
+                Column(
+                    horizontalAlignment = Alignment.CenterHorizontally,
+                    modifier = Modifier.padding(bottom = 22.dp),
                 ) {
-                    VoiceSearchButton(
-                        onSpeechResult = { spokenText ->
-                            query = spokenText
-                            triggerImmediateSearch(spokenText)
-                        },
-                        voiceInputManager = viewModel.voiceInputManager,
-                        modifier = Modifier.padding(end = 12.dp),
+                    Text(
+                        text = stringResource(R.string.search),
+                        style = GlassType.pageTitle,
+                        color = Color.White,
+                    )
+                    Text(
+                        text = stringResource(R.string.glass_search_hint),
+                        style = GlassType.meta,
+                        color = Color.White.copy(alpha = 0.64f),
+                        modifier = Modifier.padding(top = 7.dp),
                     )
                 }
-
-                SearchEditTextBox(
-                    value = query,
-                    onValueChange = {
-                        isSearchActive = true
-                        query = it
-                    },
-                    onSearchClick = { triggerImmediateSearch(query) },
-                    readOnly = !isSearchActive,
-                    modifier =
-                        Modifier
-                            .focusRequester(textFieldFocusRequester)
-                            .onFocusChanged { state ->
-                                isTextFieldFocused = state.isFocused
-                                if (!state.isFocused) isSearchActive = false
-                            }.onPreviewKeyEvent { event ->
-                                val isActivationKey =
-                                    event.key in listOf(Key.DirectionCenter, Key.Enter)
-                                if (event.type == KeyEventType.KeyUp && isActivationKey && !isSearchActive) {
-                                    isSearchActive = true
-                                    keyboardController?.show()
-                                    true
-                                } else {
-                                    false
-                                }
-                            },
-                )
-
-                ExpandableFaButton(
-                    title = R.string.view_options,
-                    iconStringRes = R.string.fa_sliders,
-                    onClick = { showViewOptions = true },
-                    modifier = Modifier.padding(start = 12.dp),
-                )
             }
+
+            SearchFieldRow(
+                query = query,
+                onQueryChange = { query = it },
+                onSearch = { triggerImmediateSearch(query) },
+                voiceInputManager = viewModel.voiceInputManager,
+                focusRequester = textFieldFocusRequester,
+                glass = glass,
+                showVoiceSearch = voiceSearchButtonVisible,
+                downFocusRequester = recentSearchFocusRequester.takeIf { recentSearches.isNotEmpty() },
+                onOpenViewOptions = { showViewOptions = true },
+                modifier =
+                    Modifier
+                        // The shell already insets the page in glass mode; adding the classic
+                        // 16dp here would push the row out of line with every other page.
+                        .padding(
+                            start = if (glass) 0.dp else 16.dp,
+                            end = if (glass) 0.dp else 16.dp,
+                            top = if (glass) 0.dp else 16.dp,
+                        ),
+            )
         }
         AnimatedVisibility(
             visible = showTabs,
@@ -359,7 +363,8 @@ fun SearchPage(
                 },
                 modifier =
                     Modifier
-                        .fillMaxWidth()
+                        // Glass mode hugs its tabs, so it must not be forced to the page width.
+                        .then(if (LocalLiquidGlass.current) Modifier else Modifier.fillMaxWidth())
                         .padding(start = 16.dp, end = 16.dp)
                         .onFocusChanged {
                             if (it.hasFocus) setPosition(RowColumn(TAB_ROW, 0))
@@ -372,10 +377,46 @@ fun SearchPage(
 //            SideEffect {
 //                Timber.v("isLibraryTab=%s, combinedMode=%s", isLibraryTab, combinedMode)
 //            }
-            when {
+            if (query.isBlank()) {
+                // Nothing typed means nothing to search, so the page becomes discovery instead
+                // of a blank canvas. The shelf draws nothing at all without a TMDB key, which
+                // leaves the page exactly as it was.
+                Column(
+                    modifier =
+                        Modifier
+                            .fillMaxSize()
+                            .verticalScroll(rememberScrollState())
+                            .padding(
+                                start = if (glass) 0.dp else 16.dp,
+                                end = if (glass) 0.dp else 16.dp,
+                                top = 8.dp,
+                            ),
+                ) {
+                    // Personal history first: discovery is what to watch next, but the viewer who
+                    // came back for yesterday's search does not have to type it again.
+                    RecentSearches(
+                        searches = recentSearches,
+                        onSelect = { search ->
+                            query = search
+                            triggerImmediateSearch(search)
+                        },
+                        onClear = viewModel::clearRecentSearches,
+                        firstChipFocusRequester = recentSearchFocusRequester,
+                    )
+                    TmdbTrendingSection(
+                        // A discovered title is not in the library, so the only way to act on it
+                        // is to look for it there. This turns the shelf into a real search
+                        // instead of a dead end.
+                        onFindInLibrary = { item ->
+                            viewModel.navigationManager.navigateTo(Destination.Search(item.displayTitle))
+                        },
+                    )
+                }
+            } else when {
                 isLibraryTab && combinedMode -> {
                     SearchCombinedResults(
                         result = state.combinedResults,
+                        query = query,
                         focusRequester = focusRequesters[COMBINED_ROW],
                         onClickItem = onClickItem,
                         onLongClickItem = { index, item ->
@@ -385,6 +426,8 @@ fun SearchPage(
                         onClickPosition = { setPosition(it) },
                         onClickDiscover = onClickDiscover,
                         positionCallback = positionCallback,
+                        onFocusItem = { viewModel.updateBackdrop(it) },
+                        onFocusDiscoverItem = { viewModel.updateBackdrop(it) },
                         modifier = Modifier.fillMaxSize(),
                     )
                 }
@@ -392,6 +435,7 @@ fun SearchPage(
                 !isLibraryTab && combinedMode -> {
                     SearchCombinedResults(
                         result = state.seerrResults,
+                        query = query,
                         focusRequester = focusRequesters[SEERR_ROW],
                         onClickItem = onClickItem,
                         onLongClickItem = { _, _ -> },
@@ -399,22 +443,69 @@ fun SearchPage(
                         onClickPosition = { setPosition(it) },
                         onClickDiscover = onClickDiscover,
                         positionCallback = positionCallback,
+                        onFocusItem = { viewModel.updateBackdrop(it) },
+                        onFocusDiscoverItem = { viewModel.updateBackdrop(it) },
                         modifier = Modifier.fillMaxSize(),
                     )
                 }
 
                 isLibraryTab -> {
+                    // Every type finished and every one is empty. Without this the page is a
+                    // blank canvas, which reads as a broken search rather than an honest "you
+                    // don't have this" — especially when the query arrived from a discovery
+                    // card, where not owning the title is the common case.
+                    val allTypesEmpty =
+                        state.includedSearchableTypes.isNotEmpty() &&
+                            state.includedSearchableTypes.all { type ->
+                                (state.results[type] as? SearchResult.Success)?.items?.isEmpty() == true
+                            }
                     LazyColumn(
                         contentPadding =
                             PaddingValues(
-                                start = 16.dp,
-                                end = 16.dp,
+                                // In glass mode the shell supplies the page inset; a second
+                                // 16dp would make search results sit 16dp right of the home rows.
+                                start = if (glass) 0.dp else 16.dp,
+                                end = if (glass) 0.dp else 16.dp,
                                 top = 8.dp,
                                 bottom = 44.dp,
                             ),
                         verticalArrangement = Arrangement.spacedBy(0.dp),
                         modifier = Modifier.focusGroup(),
                     ) {
+                        if (allTypesEmpty) {
+                            // One item, deliberately. "Not in your library" is only half an
+                            // answer; the other half is what TMDB has for the query, with the
+                            // credit its terms require. Splitting the sentence and the shelf
+                            // into two list items let the focus handoff scroll the credit off
+                            // the top, which is the one line on this page that may not be
+                            // clipped. Kept together, the section is the whole page and the
+                            // message reads as its lead-in.
+                            item {
+                                Column(
+                                    modifier =
+                                        Modifier
+                                            .fillMaxWidth()
+                                            .padding(top = 8.dp),
+                                ) {
+                                    Text(
+                                        text = stringResource(R.string.search_no_results_message, query),
+                                        style = if (glass) GlassType.meta else MaterialTheme.typography.titleMedium,
+                                        color = if (glass) Color.White.copy(alpha = 0.72f) else MaterialTheme.colorScheme.onBackground,
+                                        modifier = Modifier.padding(bottom = 12.dp),
+                                    )
+                                    TmdbSearchSection(
+                                        query = query,
+                                        firstFocusRequester = tmdbShelfFocusRequester,
+                                        singleRow = true,
+                                        onFindInLibrary = { item ->
+                                            viewModel.navigationManager.navigateTo(
+                                                Destination.Search(item.displayTitle),
+                                            )
+                                        },
+                                    )
+                                }
+                            }
+                        }
                         itemsIndexed(state.includedSearchableTypes) { index, type ->
                             val rowIndex = RESULTS_START + index
                             val result = state.results.getOrDefault(type, SearchResult.Searching)
@@ -538,6 +629,7 @@ fun SearchPage(
 @Composable
 fun SearchCombinedResults(
     result: SearchResult,
+    query: String = "",
     focusRequester: FocusRequester,
     onClickItem: (Int, BaseItem) -> Unit,
     onLongClickItem: (Int, BaseItem) -> Unit,
@@ -546,6 +638,10 @@ fun SearchCombinedResults(
     onClickDiscover: (Int, DiscoverItem) -> Unit,
     positionCallback: (columns: Int, position: Int) -> Unit,
     modifier: Modifier = Modifier,
+    /** Focused library result, so the page's backdrop follows the card the viewer is on. */
+    onFocusItem: (BaseItem) -> Unit = {},
+    /** The discovery equivalent, for a page whose results are Seerr items. */
+    onFocusDiscoverItem: (DiscoverItem) -> Unit = {},
 ) {
     when (result) {
         SearchResult.NoQuery -> {}
@@ -569,9 +665,17 @@ fun SearchCombinedResults(
 
         is SearchResult.Success -> {
             if (result.items.isEmpty()) {
+                // Combined mode is also where a TMDB bridge lands ("Search your library"),
+                // and those titles are mostly not owned: name the query so the empty state
+                // reads as an answer instead of a broken search.
                 SearchResultPlaceholder(
                     title = stringResource(R.string.results),
-                    message = stringResource(R.string.no_results),
+                    message =
+                        if (query.isNotBlank()) {
+                            stringResource(R.string.search_no_results_message, query)
+                        } else {
+                            stringResource(R.string.no_results)
+                        },
                     modifier = modifier.padding(16.dp),
                 )
             } else {
@@ -588,7 +692,10 @@ fun SearchCombinedResults(
                             item = details.item,
                             onClick = details.onClick,
                             onLongClick = details.onLongClick,
-                            modifier = details.mod,
+                            modifier =
+                                details.mod.onFocusChanged {
+                                    if (it.isFocused) details.item?.let(onFocusItem)
+                                },
                             fillWidth = details.widthPx,
                         )
                     },
@@ -601,7 +708,12 @@ fun SearchCombinedResults(
             if (result.items.isEmpty()) {
                 SearchResultPlaceholder(
                     title = stringResource(R.string.results),
-                    message = stringResource(R.string.no_results),
+                    message =
+                        if (query.isNotBlank()) {
+                            stringResource(R.string.search_no_results_message, query)
+                        } else {
+                            stringResource(R.string.no_results)
+                        },
                     modifier = modifier.padding(16.dp),
                 )
             } else {
@@ -618,7 +730,10 @@ fun SearchCombinedResults(
                             item = details.item,
                             onClick = details.onClick,
                             onLongClick = details.onLongClick,
-                            modifier = details.mod,
+                            modifier =
+                                details.mod.onFocusChanged {
+                                    if (it.isFocused) details.item?.let(onFocusDiscoverItem)
+                                },
                         )
                     },
                     modifier = modifier,
@@ -756,19 +871,20 @@ fun SearchResultPlaceholder(
     modifier: Modifier = Modifier,
     messageColor: Color = MaterialTheme.colorScheme.onBackground,
 ) {
+    val glass = LocalLiquidGlass.current
     Column(
         verticalArrangement = Arrangement.spacedBy(8.dp),
         modifier = modifier.padding(bottom = 32.dp),
     ) {
         Text(
             text = title,
-            style = MaterialTheme.typography.titleLarge,
-            color = MaterialTheme.colorScheme.onBackground,
+            style = if (glass) GlassType.rowTitle else MaterialTheme.typography.titleLarge,
+            color = if (glass) Color.White else MaterialTheme.colorScheme.onBackground,
         )
         Text(
             text = message,
-            style = MaterialTheme.typography.titleMedium,
-            color = messageColor,
+            style = if (glass) GlassType.meta else MaterialTheme.typography.titleMedium,
+            color = if (glass) Color.White.copy(alpha = 0.64f) else messageColor,
         )
     }
 }

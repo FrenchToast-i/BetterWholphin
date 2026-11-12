@@ -64,6 +64,8 @@ import com.github.damontecres.wholphin.data.filter.YearFilter
 import com.github.damontecres.wholphin.data.model.GetItemsFilter
 import com.github.damontecres.wholphin.ui.FontAwesome
 import com.github.damontecres.wholphin.ui.PreviewTvSpec
+import com.github.damontecres.wholphin.ui.theme.GlassType
+import com.github.damontecres.wholphin.ui.theme.LocalLiquidGlass
 import com.github.damontecres.wholphin.ui.theme.WholphinTheme
 import com.github.damontecres.wholphin.ui.tryRequestFocus
 import java.util.UUID
@@ -101,7 +103,7 @@ fun FilterByButton(
 
         DropdownMenu(
             expanded = dropDown,
-            containerColor = MaterialTheme.colorScheme.surfaceColorAtElevation(3.dp),
+            containerColor = glassMenuColor(3.dp),
             onDismissRequest = {
                 onShow?.invoke(false)
                 dropDown = false
@@ -165,7 +167,7 @@ fun FilterByButton(
 
         DropdownMenu(
             expanded = nestedDropDown != null,
-            containerColor = MaterialTheme.colorScheme.surfaceColorAtElevation(5.dp),
+            containerColor = glassMenuColor(5.dp),
             offset = DpOffset(80.dp, 16.dp),
             onDismissRequest = {
                 nestedDropDown = null
@@ -395,6 +397,11 @@ fun ExpandableFilterButton(
     iconColor: Color = Color.Unspecified,
 ) {
     val isFocused = interactionSource.collectIsFocusedAsState().value
+    // Above a library's cards these controls float on the page artwork, not inside a pane, so
+    // they take the same smoked capsule as the view-options disc beside them. Left as the
+    // classic opaque chip they read as a different material in the same row — two greys and a
+    // glass disc three across.
+    val glass = LocalLiquidGlass.current
     Button(
         onClick = onClick,
         modifier =
@@ -405,6 +412,7 @@ fun ExpandableFilterButton(
             ),
         contentPadding = PaddingValues(0.dp), // DefaultButtonPadding,
         interactionSource = interactionSource,
+        glassFilled = glass,
     ) {
         Box(
             modifier =
@@ -414,7 +422,7 @@ fun ExpandableFilterButton(
         ) {
             Text(
                 text = stringResource(R.string.fa_filter),
-                style = MaterialTheme.typography.titleSmall,
+                style = if (glass) GlassType.button else MaterialTheme.typography.titleSmall,
                 color = iconColor,
                 fontSize = 16.sp,
                 fontFamily = FontAwesome,
@@ -425,14 +433,14 @@ fun ExpandableFilterButton(
         AnimatedVisibility(filterCount > 0) {
             Text(
                 text = filterCount.toString(),
-                style = MaterialTheme.typography.titleSmall,
+                style = if (glass) GlassType.button else MaterialTheme.typography.titleSmall,
                 modifier = Modifier.padding(end = 4.dp),
             )
         }
         AnimatedVisibility(isFocused) {
             Text(
                 text = stringResource(R.string.filter),
-                style = MaterialTheme.typography.titleSmall,
+                style = if (glass) GlassType.button else MaterialTheme.typography.titleSmall,
                 modifier = Modifier.padding(start = 4.dp, end = 4.dp),
             )
         }
@@ -465,7 +473,7 @@ fun DiscoverFilterByButton(
 
         DropdownMenu(
             expanded = dropDown,
-            containerColor = MaterialTheme.colorScheme.surfaceColorAtElevation(3.dp),
+            containerColor = glassMenuColor(3.dp),
             onDismissRequest = {
                 onShow?.invoke(false)
                 dropDown = false
@@ -529,7 +537,7 @@ fun DiscoverFilterByButton(
 
         DropdownMenu(
             expanded = nestedDropDown != null,
-            containerColor = MaterialTheme.colorScheme.surfaceColorAtElevation(5.dp),
+            containerColor = glassMenuColor(5.dp),
             offset = DpOffset(80.dp, 16.dp),
             onDismissRequest = {
                 nestedDropDown = null

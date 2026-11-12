@@ -4,12 +4,14 @@ import androidx.compose.foundation.interaction.MutableInteractionSource
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.remember
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.graphics.Color
 import androidx.tv.material3.ListItem
 import androidx.tv.material3.MaterialTheme
 import androidx.tv.material3.Switch
 import androidx.tv.material3.SwitchColors
 import androidx.tv.material3.SwitchDefaults
 import com.github.damontecres.wholphin.preferences.AppThemeColors
+import com.github.damontecres.wholphin.ui.theme.LocalLiquidGlass
 import com.github.damontecres.wholphin.ui.theme.LocalTheme
 
 @Composable
@@ -59,6 +61,10 @@ fun SwitchPreference(
                 colors = SwitchColors(),
             )
         },
+        colors = glassListItemColors(),
+        shape = glassListItemShape(),
+        scale = glassListItemScale(),
+        glow = glassListItemGlow(),
         interactionSource = interactionSource,
         modifier = modifier,
     )
@@ -66,6 +72,20 @@ fun SwitchPreference(
 
 @Composable
 fun SwitchColors(): SwitchColors {
+    if (LocalLiquidGlass.current) {
+        // Glass mode is monochrome: a lit white track with a black thumb, which is the same
+        // on/off signal as the selected pill in the top bar. The stock lavender track is the
+        // last purple widget in an otherwise neutral sheet and reads as a leftover from the
+        // classic theme.
+        return SwitchDefaults.colors(
+            checkedThumbColor = Color.Black,
+            checkedTrackColor = Color.White,
+            checkedBorderColor = Color.Transparent,
+            uncheckedThumbColor = Color.White.copy(alpha = 0.80f),
+            uncheckedTrackColor = Color.Black.copy(alpha = 0.32f),
+            uncheckedBorderColor = Color.White.copy(alpha = 0.28f),
+        )
+    }
     val theme = LocalTheme.current
     return when (theme) {
         AppThemeColors.UNRECOGNIZED,

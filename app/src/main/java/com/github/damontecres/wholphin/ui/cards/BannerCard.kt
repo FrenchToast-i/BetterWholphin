@@ -108,6 +108,10 @@ fun BannerCard(
         onClick = { currentOnClick() },
         onLongClick = { currentOnLongClick() },
         interactionSource = interactionSource,
+        shape = glassCardShape(),
+        border = glassCardBorder(),
+        glow = glassCardGlow(),
+        scale = glassCardScale(),
         colors =
             CardDefaults.colors(
 //                containerColor = Color.Transparent,

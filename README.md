@@ -2,6 +2,16 @@
 
 > "Never half-phin two jellies. Always wholphin one jelly."
 
+> **This checkout is BetterWholphin**, a personal fork maintained at
+> [FrenchToast-i/BetterWholphin](https://github.com/FrenchToast-i/BetterWholphin). It adds the
+> Liquid Glass interface, Tonight, the play-something shuffle, watch parties, TMDB discovery and
+> My List, and a redesigned Live TV guide and Sports tab on top of upstream Wholphin.
+>
+> **Install / update:** download the latest `Wholphin.apk` from the fork's releases page and
+> sideload it, or use **Settings → About → check for updates** inside the app. Updates are manual
+> by design. Releases from this fork are signed with a different key than upstream Wholphin, so
+> uninstall any upstream or debug build once before installing the first fork release.
+
 Wholphin is an open-source Android TV client for Jellyfin. It aims to provide a different app UI that's inspired by Plex for users interested in migrating to Jellyfin.
 
 This is not a fork of the [official client](https://github.com/jellyfin/jellyfin-androidtv). Wholphin's user interface and controls have been written completely from scratch. Wholphin supports playing media using either ExoPlayer or MPV.

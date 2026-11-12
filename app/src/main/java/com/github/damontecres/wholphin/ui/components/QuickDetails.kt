@@ -19,6 +19,7 @@ import androidx.compose.ui.text.Placeholder
 import androidx.compose.ui.text.PlaceholderVerticalAlign
 import androidx.compose.ui.text.TextStyle
 import androidx.compose.ui.text.buildAnnotatedString
+import androidx.compose.ui.text.style.TextOverflow
 import androidx.tv.material3.Icon
 import androidx.tv.material3.MaterialTheme
 import androidx.tv.material3.Text
@@ -39,9 +40,38 @@ fun QuickDetails(
     modifier: Modifier = Modifier,
     textStyle: TextStyle = MaterialTheme.typography.titleSmall,
     endsAt: DateTime? = null,
+    /**
+     * Whether the line may claim when the title finishes.
+     *
+     * Tonight passes false: its card carries a deadline rule that computes the finish time from
+     * its own window, and a line derived a second later printed a second "Ends at" a minute apart
+     * from the rule right below it.
+     */
+    showEndsAt: Boolean = true,
+    /**
+     * Draw the whole line as one ellipsized text.
+     *
+     * The default is a Row of separate texts, which is right when the header is as wide as the
+     * page. In a fixed-width pane (the glass hero) four unweighted texts each measure to their own
+     * width and the last one is simply clipped by the pane's edge: "Ends at 11:20" loses its
+     * minutes because the string inside the same sentence was too long.
+     */
+    oneLine: Boolean = false,
 ) {
     val enabled = LocalInterfaceCustomization.current.enabledDisplayToggles
     val inlineContentMap = rememberQuickDetailsContentMap(textStyle)
+    if (oneLine) {
+        Text(
+            text = rememberQuickDetailsLine(details, timeRemaining, endsAt, enabled, showEndsAt),
+            color = MaterialTheme.colorScheme.onSurface,
+            style = textStyle,
+            inlineContent = inlineContentMap,
+            maxLines = 1,
+            overflow = TextOverflow.Ellipsis,
+            modifier = modifier,
+        )
+        return
+    }
     Row(modifier = modifier) {
         if (details != null) {
             QuickDetailsText(details.basic, Modifier, textStyle, inlineContentMap)
@@ -57,9 +87,51 @@ fun QuickDetails(
         }
         if (timeRemaining != null) {
             TimeRemaining(timeRemaining, textStyle = textStyle)
-        } else if (endsAt != null) {
+        } else if (endsAt != null && showEndsAt) {
             EndsAt(endsAt, textStyle = textStyle)
         }
+    }
+}
+
+/**
+ * Every detail as one string, in the order the Row would draw them.
+ *
+ * Concatenating the parts (rather than re-deriving them) keeps the rating icons: each part is an
+ * [AnnotatedString] carrying its own inline content, and `plus` carries the placeholders and
+ * their ranges across.
+ */
+@Composable
+private fun rememberQuickDetailsLine(
+    details: QuickDetailsData?,
+    timeRemaining: Duration?,
+    endsAt: DateTime?,
+    enabled: Collection<DisplayToggle>,
+    showEndsAt: Boolean = true,
+): AnnotatedString {
+    val resources = LocalResources.current
+    val context = LocalContext.current
+    val now by LocalClock.current.now
+    val end =
+        when {
+            !showEndsAt -> null
+            timeRemaining != null -> now.plusSeconds(timeRemaining.inWholeSeconds)
+            else -> endsAt
+        }
+    return remember(details, end, enabled, resources, context) {
+        var line = details?.basic ?: AnnotatedString("")
+        if (details != null) {
+            if (DisplayToggle.OFFICIAL_RATING in enabled) details.officialRating?.let { line += it }
+            if (DisplayToggle.COMMUNITY_RATING in enabled) details.communityRating?.let { line += it }
+            if (DisplayToggle.CRITIC_RATING in enabled) details.criticRating?.let { line += it }
+        }
+        if (end != null) {
+            line +=
+                buildAnnotatedString {
+                    dot()
+                    append(resources.getString(R.string.ends_at, formatTime(context, end)))
+                }
+        }
+        line
     }
 }
 

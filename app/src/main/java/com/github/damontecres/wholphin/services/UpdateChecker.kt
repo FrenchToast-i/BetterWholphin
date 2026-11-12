@@ -128,8 +128,12 @@ class UpdateChecker
         }
 
         suspend fun getRelease(version: Version): Release? {
+            // The fork's own repository, matching the default update URL in
+            // [com.github.damontecres.wholphin.preferences.AppPreference.UpdateUrl]. A build
+            // published from here must never announce an upstream release as an update: the
+            // signature would not match and the install would be refused.
             val url =
-                "https://api.github.com/repos/damontecres/Wholphin/releases/tags/v${version.major}.${version.minor}.${version.patch}"
+                "https://api.github.com/repos/FrenchToast-i/BetterWholphin/releases/tags/v${version.major}.${version.minor}.${version.patch}"
             return withContext(WholphinDispatchers.IO) {
                 val request =
                     Request

@@ -74,6 +74,7 @@ import com.github.damontecres.wholphin.preferences.AppThemeColors
 import com.github.damontecres.wholphin.preferences.UserPreferences
 import com.github.damontecres.wholphin.services.BackdropService
 import com.github.damontecres.wholphin.services.MusicService
+import com.github.damontecres.wholphin.services.NavDrawerItemState
 import com.github.damontecres.wholphin.services.NavDrawerService
 import com.github.damontecres.wholphin.services.NavigationManager
 import com.github.damontecres.wholphin.services.SetupDestination
@@ -86,6 +87,8 @@ import com.github.damontecres.wholphin.ui.launchDefault
 import com.github.damontecres.wholphin.ui.preferences.PreferenceScreenOption
 import com.github.damontecres.wholphin.ui.setup.UserIconCardImage
 import com.github.damontecres.wholphin.ui.spacedByWithFooter
+import com.github.damontecres.wholphin.ui.theme.GlassTokens
+import com.github.damontecres.wholphin.ui.theme.LocalLiquidGlass
 import com.github.damontecres.wholphin.ui.theme.LocalTheme
 import com.github.damontecres.wholphin.ui.toServerString
 import com.github.damontecres.wholphin.ui.tryRequestFocus
@@ -113,6 +116,9 @@ class NavDrawerViewModel
     ) : ViewModel() {
         val serviceState = navDrawerService.state
 
+        /** Bumped by every navigation, so the lit destination follows the stack. */
+        val stackVersion = navigationManager.stackVersion
+
         private val _state = MutableStateFlow(NavDrawerState())
         val state: StateFlow<NavDrawerState> = _state
 
@@ -121,6 +127,11 @@ class NavDrawerViewModel
             item: NavDrawerItem,
         ) {
             when (item) {
+                NavDrawerItem.Tonight -> {
+                    setIndex(index)
+                    navigationManager.navigateToFromDrawer(Destination.Tonight)
+                }
+
                 NavDrawerItem.Favorites -> {
                     setIndex(index)
                     navigationManager.navigateToFromDrawer(
@@ -168,6 +179,7 @@ class NavDrawerViewModel
                     }.map {
                         when (it) {
                             is ServerNavDrawerItem -> it.destination
+                            is NavDrawerItem.Tonight -> Destination.Tonight
                             is NavDrawerItem.Favorites -> Destination.Favorites
                             is NavDrawerItem.Discover -> Destination.Discover
                             else -> null
@@ -224,6 +236,14 @@ sealed interface NavDrawerItem {
 
     fun name(context: Context): String
 
+    /** The nightly plan: what can be finished before bedtime, and why. */
+    object Tonight : NavDrawerItem {
+        override val id: String
+            get() = "a_tonight"
+
+        override fun name(context: Context): String = context.getString(R.string.tonight)
+    }
+
     object Favorites : NavDrawerItem {
         override val id: String
             get() = "a_favorites"
@@ -264,9 +284,12 @@ data class ServerNavDrawerItem(
     }
 }
 
-private const val HOME_INDEX = -1
-private const val SEARCH_INDEX = -2
-private const val NOW_PLAYING_INDEX = -3
+internal const val HOME_INDEX = -1
+internal const val SEARCH_INDEX = -2
+internal const val NOW_PLAYING_INDEX = -3
+
+/** No bar destination is current, e.g. while a full-screen page such as Settings is open. */
+internal const val NO_INDEX = -4
 
 /**
  * Display the left side navigation drawer with [DestinationContent] on the right
@@ -287,26 +310,61 @@ fun NavDrawer(
             key = "${server.id}_${user.id}", // Keyed to the server & user to ensure its reset when switching either
         ),
 ) {
-    LaunchedEffect(Unit) { viewModel.updateSelectedIndex() }
     val scope = rememberCoroutineScope()
     val context = LocalContext.current
     val density = LocalDensity.current
 
     val focusRequester = remember { FocusRequester() }
+    val liquidGlass = LocalLiquidGlass.current
 
-    // If the user presses back while on the home page, open the nav drawer, another back press will quit the app
-    BackHandler(enabled = (drawerState.currentValue == DrawerValue.Closed && destination is Destination.Home)) {
+    // If the user presses back while on the home page, open the nav drawer, another back press will quit the app.
+    // In glass mode the rail is always visible, so back on the home page exits like any root screen.
+    BackHandler(
+        enabled =
+            !liquidGlass &&
+                drawerState.currentValue == DrawerValue.Closed &&
+                destination is Destination.Home,
+    ) {
         drawerState.setValue(DrawerValue.Open)
         focusRequester.requestFocus()
     }
     val serviceState by viewModel.serviceState.collectAsState()
     val state by viewModel.state.collectAsState()
+    // Re-derive the lit destination whenever the stack changes: a cold start that restores a
+    // page, and Back, both change the current place without going through a drawer click.
+    // The library list is a key too: the highlight is matched *against* those destinations, and
+    // on a cold start they arrive after the first composition, so deriving once against an empty
+    // list left Home lit on whatever page was restored.
+    val stackVersion by viewModel.stackVersion.collectAsState()
+    LaunchedEffect(stackVersion, serviceState.items, serviceState.moreItems) {
+        viewModel.updateSelectedIndex()
+    }
     val moreExpanded = state.moreExpanded
     // A negative index is a built-in page, >=0 is a library
     val selectedIndex = state.selectedIndex
+    val userImageUrl = remember(user) { viewModel.getUserImage(user) }
 
-    BackHandler(enabled = moreExpanded && drawerState.currentValue == DrawerValue.Open) {
+    BackHandler(
+        enabled = !liquidGlass && moreExpanded && drawerState.currentValue == DrawerValue.Open,
+    ) {
         viewModel.setShowMore(false)
+    }
+
+    if (liquidGlass) {
+        GlassTopBarScaffold(
+            destination = destination,
+            preferences = preferences,
+            user = user,
+            server = server,
+            userImageUrl = userImageUrl,
+            serviceState = serviceState,
+            selectedIndex = selectedIndex,
+            moreExpanded = moreExpanded,
+            onClearBackdrop = onClearBackdrop,
+            viewModel = viewModel,
+            modifier = modifier,
+        )
+        return
     }
 
     val closedDrawerWidth = CollapsedDrawerItemWidth
@@ -343,7 +401,6 @@ fun NavDrawer(
                 ) {
                     // Even though some must be clicked, focusing on it should clear other focused items
                     val interactionSource = remember { MutableInteractionSource() }
-                    val userImageUrl = remember(user) { viewModel.getUserImage(user) }
                     ProfileIcon(
                         user = user,
                         imageUrl = userImageUrl,
@@ -660,36 +717,7 @@ fun NavigationDrawerScope.NavItem(
     containerColor: Color = Color.Unspecified,
 ) {
     val context = LocalContext.current
-    val useFont = library !is ServerNavDrawerItem || library.type != CollectionType.LIVETV
-    val icon =
-        remember(library) {
-            when (library) {
-                NavDrawerItem.Favorites -> {
-                    R.string.fa_heart
-                }
-
-                NavDrawerItem.More -> {
-                    R.string.fa_ellipsis
-                }
-
-                NavDrawerItem.Discover -> {
-                    R.string.fa_magnifying_glass_plus
-                }
-
-                is ServerNavDrawerItem -> {
-                    when (library.type) {
-                        CollectionType.MOVIES -> R.string.fa_film
-                        CollectionType.TVSHOWS -> R.string.fa_tv
-                        CollectionType.HOMEVIDEOS -> R.string.fa_video
-                        CollectionType.LIVETV -> R.drawable.gf_dvr
-                        CollectionType.MUSIC -> R.string.fa_music
-                        CollectionType.BOXSETS -> R.string.fa_open_folder
-                        CollectionType.PLAYLISTS -> R.string.fa_list_ul
-                        else -> R.string.fa_film
-                    }
-                }
-            }
-        }
+    val (icon, useFont) = rememberNavDrawerItemIcon(library)
     val focused by interactionSource.collectIsFocusedAsState()
     NavigationDrawerItem(
         modifier = modifier,
@@ -802,3 +830,156 @@ fun navItemColor(
 val DrawerState.isOpen: Boolean get() = this.currentValue.isOpen
 
 val DrawerValue.isOpen: Boolean get() = this == DrawerValue.Open
+
+/**
+ * The Liquid Glass shell: floating glass capsules across the top, page content beneath them.
+ */
+@Composable
+private fun GlassTopBarScaffold(
+    destination: Destination,
+    preferences: UserPreferences,
+    user: JellyfinUser,
+    server: JellyfinServer,
+    userImageUrl: String?,
+    serviceState: NavDrawerItemState,
+    selectedIndex: Int,
+    moreExpanded: Boolean,
+    onClearBackdrop: () -> Unit,
+    viewModel: NavDrawerViewModel,
+    modifier: Modifier = Modifier,
+) {
+    // Every non-destination control on the bar can be switched off, the same way a library can be
+    // unpinned from the drawer.
+    val topBar = preferences.appPreferences.interfacePreferences.topBarPreferences
+    val surpriseViewModel: SurpriseViewModel = hiltViewModel()
+    Box(modifier = modifier.fillMaxSize()) {
+        DestinationContent(
+            destination = destination,
+            preferences = preferences,
+            onClearBackdrop = onClearBackdrop,
+            modifier =
+                Modifier
+                    .fillMaxSize()
+                    .padding(
+                        start = GlassTokens.screenInset,
+                        end = GlassTokens.screenInset,
+                        top = GlassTokens.contentTop,
+                    ),
+        )
+        GlassTopBar(
+            items = serviceState.items,
+            moreItems = serviceState.moreItems,
+            // Settings is a full-screen page reached from the gear rather than from a library
+            // pill, so the destination capsule goes quiet and the gear carries the selection.
+            selectedIndex = if (destination is Destination.Settings) NO_INDEX else selectedIndex,
+            settingsSelected = destination is Destination.Settings,
+            moreExpanded = moreExpanded,
+            nowPlayingEnabled = serviceState.nowPlayingEnabled,
+            nowPlayingTitle = serviceState.nowPlayingTitle,
+            user = user,
+            userImageUrl = userImageUrl,
+            // The clock never yields to the library pills: on a full bar it shrinks to a watch
+            // face disc instead (see GlassTopBar), because a television without a clock is a
+            // worse trade than a smaller readout.
+            showClock = preferences.appPreferences.interfacePreferences.showClock,
+            showHome = !topBar.hideHome,
+            showNowPlaying = !topBar.hideNowPlaying,
+            showSettings = !topBar.hideSettings,
+            showProfile = !topBar.hideProfile,
+            showSearch =
+                !topBar.hideSearch &&
+                    destination !is Destination.Search &&
+                    destination !is Destination.Settings,
+            showPlaySomething = !topBar.hideShuffle,
+            showTonight = true,
+            tonightSelected = destination is Destination.Tonight,
+            onTonightClick = {
+                val index = serviceState.items.indexOf(NavDrawerItem.Tonight)
+                viewModel.onClickDrawerItem(
+                    if (index >= 0) index else serviceState.items.size,
+                    NavDrawerItem.Tonight,
+                )
+            },
+            onProfileClick = {
+                viewModel.navigateToSetup(SetupDestination.UserList(server))
+            },
+            onNowPlayingClick = {
+                viewModel.setIndex(NOW_PLAYING_INDEX)
+                viewModel.navigationManager.navigateTo(Destination.NowPlaying)
+            },
+            onHomeClick = {
+                viewModel.setIndex(HOME_INDEX)
+                if (destination is Destination.Home) {
+                    viewModel.navigationManager.reloadHome()
+                    onClearBackdrop.invoke()
+                } else {
+                    viewModel.navigationManager.goToHome()
+                }
+            },
+            onSelect = viewModel::onClickDrawerItem,
+            onMoreClick = {
+                viewModel.onClickDrawerItem(serviceState.items.size, NavDrawerItem.More)
+            },
+            onSettingsClick = {
+                viewModel.navigationManager.navigateTo(
+                    Destination.Settings(PreferenceScreenOption.BASIC),
+                )
+            },
+            onSearchClick = {
+                viewModel.setIndex(SEARCH_INDEX)
+                viewModel.navigationManager.navigateToFromDrawer(Destination.Search())
+            },
+            onPlaySomethingClick = surpriseViewModel::playSomething,
+            modifier =
+                Modifier
+                    .align(Alignment.TopCenter)
+                    .padding(
+                        horizontal = GlassTokens.screenInset,
+                        vertical = GlassTokens.barTopInset,
+                    ),
+        )
+    }
+}
+
+/**
+ * Maps a [NavDrawerItem] to its icon resource, and whether that icon comes from the bundled
+ * Font Awesome font rather than a drawable.
+ */
+@Composable
+internal fun rememberNavDrawerItemIcon(library: NavDrawerItem): Pair<Int, Boolean> {
+    val useFont = library !is ServerNavDrawerItem || library.type != CollectionType.LIVETV
+    val icon =
+        remember(library) {
+            when (library) {
+                NavDrawerItem.Tonight -> {
+                    R.string.fa_moon
+                }
+
+                NavDrawerItem.Favorites -> {
+                    R.string.fa_heart
+                }
+
+                NavDrawerItem.More -> {
+                    R.string.fa_ellipsis
+                }
+
+                NavDrawerItem.Discover -> {
+                    R.string.fa_magnifying_glass_plus
+                }
+
+                is ServerNavDrawerItem -> {
+                    when (library.type) {
+                        CollectionType.MOVIES -> R.string.fa_film
+                        CollectionType.TVSHOWS -> R.string.fa_tv
+                        CollectionType.HOMEVIDEOS -> R.string.fa_video
+                        CollectionType.LIVETV -> R.drawable.gf_dvr
+                        CollectionType.MUSIC -> R.string.fa_music
+                        CollectionType.BOXSETS -> R.string.fa_open_folder
+                        CollectionType.PLAYLISTS -> R.string.fa_list_ul
+                        else -> R.string.fa_film
+                    }
+                }
+            }
+        }
+    return icon to useFont
+}

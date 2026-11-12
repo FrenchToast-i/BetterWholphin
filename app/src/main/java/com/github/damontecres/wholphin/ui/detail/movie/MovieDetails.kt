@@ -47,6 +47,7 @@ import com.github.damontecres.wholphin.ui.components.ContextMenuActions
 import com.github.damontecres.wholphin.ui.components.ContextMenuDialog
 import com.github.damontecres.wholphin.ui.components.ErrorMessage
 import com.github.damontecres.wholphin.ui.components.ExpandablePlayButtons
+import com.github.damontecres.wholphin.ui.watchparty.WatchPartyDialog
 import com.github.damontecres.wholphin.ui.components.HeaderUtils
 import com.github.damontecres.wholphin.ui.components.LoadingPage
 import com.github.damontecres.wholphin.ui.components.Optional
@@ -61,6 +62,9 @@ import com.github.damontecres.wholphin.ui.discover.DiscoverRowData
 import com.github.damontecres.wholphin.ui.letNotEmpty
 import com.github.damontecres.wholphin.ui.nav.Destination
 import com.github.damontecres.wholphin.ui.rememberInt
+import com.github.damontecres.wholphin.ui.theme.GlassPanel
+import com.github.damontecres.wholphin.ui.theme.GlassTokens
+import com.github.damontecres.wholphin.ui.theme.LocalLiquidGlass
 import com.github.damontecres.wholphin.ui.util.ResStringProvider
 import com.github.damontecres.wholphin.util.DataLoadingState
 import com.github.damontecres.wholphin.util.DiscoverRequestType
@@ -94,6 +98,7 @@ fun MovieDetails(
     var overviewDialog by remember { mutableStateOf<ItemDetailsDialogInfo?>(null) }
     var showContextMenu by remember { mutableStateOf<ContextMenu?>(null) }
     var showPlaylistDialog by remember { mutableStateOf<Optional<UUID>>(Optional.absent()) }
+    var showWatchParty by remember { mutableStateOf(false) }
     val playlistState by playlistViewModel.playlistState.collectAsState()
 
     val userDto by viewModel.serverRepository.currentUserDtoFlow.collectAsState(null)
@@ -236,8 +241,23 @@ fun MovieDetails(
                 canDelete = state.canDelete,
                 onConfirmDelete = { state.movie?.let { viewModel.deleteItem(it) } },
                 onChooseVersion = { contextActions.onChooseVersion.invoke(movie, it) },
+                watchTogetherOnClick = { showWatchParty = true },
                 modifier = modifier,
             )
+            if (showWatchParty) {
+                WatchPartyDialog(
+                    title = movie.title,
+                    onDismissRequest = { showWatchParty = false },
+                    onStartParty = {
+                        showWatchParty = false
+                        viewModel.navigateTo(Destination.Playback(movie.id, 0))
+                    },
+                    onJoined = { target ->
+                        showWatchParty = false
+                        viewModel.navigateTo(Destination.Playback(target.itemId, target.positionMs))
+                    },
+                )
+            }
         }
     }
     showContextMenu?.let { contextMenu ->
@@ -306,6 +326,7 @@ fun MovieDetailsContent(
     canDelete: Boolean,
     onConfirmDelete: () -> Unit,
     onChooseVersion: (MediaSourceInfo) -> Unit,
+    watchTogetherOnClick: (() -> Unit)? = null,
     modifier: Modifier = Modifier,
 ) {
     val context = LocalContext.current
@@ -316,6 +337,7 @@ fun MovieDetailsContent(
     val resumePosition = dto.userData?.playbackPositionTicks?.ticks ?: Duration.ZERO
 
     val bringIntoViewRequester = remember { BringIntoViewRequester() }
+    val glass = LocalLiquidGlass.current
 
     RequestOrRestoreFocus(focusRequesters.getOrNull(position))
 
@@ -326,13 +348,7 @@ fun MovieDetailsContent(
             modifier = Modifier.fillMaxSize(),
         ) {
             item {
-                Column(
-                    verticalArrangement = Arrangement.spacedBy(0.dp),
-                    modifier =
-                        Modifier
-                            .fillMaxWidth()
-                            .bringIntoViewRequester(bringIntoViewRequester),
-                ) {
+                val headerContent: @Composable () -> Unit = {
                     MovieDetailsHeader(
                         preferences = preferences,
                         movie = movie,
@@ -342,7 +358,10 @@ fun MovieDetailsContent(
                         modifier =
                             Modifier
                                 .fillMaxWidth()
-                                .padding(top = HeaderUtils.topPadding, bottom = 16.dp),
+                                .padding(
+                                    top = if (glass) 0.dp else HeaderUtils.topPadding,
+                                    bottom = 16.dp,
+                                ),
                     )
                     ExpandablePlayButtons(
                         title = movie.title ?: "",
@@ -379,12 +398,50 @@ fun MovieDetailsContent(
                                     onChooseVersion = onChooseVersion,
                                 )
                             },
+                        watchTogetherOnClick = watchTogetherOnClick,
                         modifier =
                             Modifier
                                 .fillMaxWidth()
                                 .padding(bottom = 16.dp)
                                 .focusRequester(focusRequesters[HEADER_ROW]),
                     )
+                }
+                if (glass) {
+                    // The detail header is the same material as the home hero: one pane of
+                    // clear glass over the artwork, rather than type floating on a bare
+                    // gradient. The play buttons travel with it so the page has a single
+                    // place to look.
+                    Box(
+                        modifier =
+                            Modifier
+                                .fillMaxWidth()
+                                .padding(horizontal = GlassTokens.screenInset, vertical = 4.dp),
+                    ) {
+                        GlassPanel(
+                            modifier = Modifier.fillMaxWidth(0.66f),
+                            scrim = 1f,
+                        ) {
+                            Column(
+                                verticalArrangement = Arrangement.spacedBy(0.dp),
+                                modifier =
+                                    Modifier
+                                        .padding(horizontal = 20.dp, vertical = 18.dp)
+                                        .bringIntoViewRequester(bringIntoViewRequester),
+                            ) {
+                                headerContent()
+                            }
+                        }
+                    }
+                } else {
+                    Column(
+                        verticalArrangement = Arrangement.spacedBy(0.dp),
+                        modifier =
+                            Modifier
+                                .fillMaxWidth()
+                                .bringIntoViewRequester(bringIntoViewRequester),
+                    ) {
+                        headerContent()
+                    }
                 }
             }
             state.people.letNotEmpty { people ->

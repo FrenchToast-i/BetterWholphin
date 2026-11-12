@@ -11,6 +11,7 @@ import com.github.damontecres.wholphin.preferences.AppPreferences
 import com.github.damontecres.wholphin.preferences.update
 import com.github.damontecres.wholphin.services.AppUpgradeHandler
 import com.github.damontecres.wholphin.services.BackdropService
+import com.github.damontecres.wholphin.services.ContinuityService
 import com.github.damontecres.wholphin.services.DeviceProfileService
 import com.github.damontecres.wholphin.services.IntentResult
 import com.github.damontecres.wholphin.services.IntentService
@@ -58,6 +59,7 @@ class TestMainActivityViewModel {
     private val backdropService: BackdropService = mockk(relaxed = true)
     private val appUpgradeHandler: AppUpgradeHandler = mockk()
     private val intentService: IntentService = mockk()
+    private val continuityService: ContinuityService = mockk(relaxed = true)
 
     val viewModel =
         MainActivityViewModel(
@@ -70,6 +72,7 @@ class TestMainActivityViewModel {
             backdropService,
             appUpgradeHandler,
             intentService,
+            continuityService,
         )
 
     private val serverId = UUID.randomUUID()
@@ -92,6 +95,8 @@ class TestMainActivityViewModel {
         val mockToast = mockk<Toast>()
         every { Toast.makeText(any(), any<CharSequence>(), any()) } returns mockToast
         every { mockToast.show() } returns Unit
+        // Nothing remembered by default: the start-up tests below are about the sign-in flow.
+        every { continuityService.load(any(), any()) } returns null
     }
 
     @After
@@ -134,6 +139,52 @@ class TestMainActivityViewModel {
             }
             coVerify(exactly = 0) { serverRepository.restoreLastSession() }
             coVerify(exactly = 0) { serverRepository.getMostRecentServer() }
+        }
+
+    @Test
+    fun `Test a cold start re-opens the last screen`() =
+        runTest(testDispatcher) {
+            setupPreferences {
+                signInAutomatically = true
+            }
+            every { serverRepository.current } returns MutableStateFlow<CurrentUser?>(null)
+            coEvery { serverRepository.restoreLastSession() } returns
+                RestoredSession.Success(currentUser)
+            val startStack = mutableListOf<Destination>(Destination.Home())
+            every { navigationManager.backStack } returns startStack
+            val remembered = mutableListOf<Destination>(Destination.Home(), Destination.Favorites)
+            every { continuityService.load(any(), any()) } returns remembered
+
+            viewModel.handleAppStart()
+
+            verify { continuityService.load(currentUser.user.id.toString(), any()) }
+            // Through replaceStack, not by assigning backStack: the drawer has to be told the
+            // current place changed, or the restored page comes back with Home still lit.
+            val restored = mutableListOf<List<Destination>>()
+            verify { navigationManager.replaceStack(capture(restored)) }
+            Assert.assertEquals(remembered, restored.first())
+        }
+
+    @Test
+    fun `Test a restored session state is not overwritten by the remembered screen`() =
+        runTest(testDispatcher) {
+            setupPreferences {
+                signInAutomatically = true
+            }
+            every { serverRepository.current } returns MutableStateFlow<CurrentUser?>(null)
+            coEvery { serverRepository.restoreLastSession() } returns
+                RestoredSession.Success(currentUser)
+            // A configuration change or a restored instance state already carries a deep stack.
+            every { navigationManager.backStack } returns
+                mutableListOf<Destination>(Destination.Home(), Destination.Favorites)
+            every { continuityService.load(any(), any()) } returns
+                listOf(Destination.Home(), Destination.Search("alien"))
+
+            viewModel.handleAppStart()
+
+            coVerify(exactly = 0) { continuityService.load(any(), any()) }
+            verify(exactly = 0) { navigationManager.replaceStack(any()) }
+            verify(exactly = 0) { navigationManager.backStack = any() }
         }
 
     @Test

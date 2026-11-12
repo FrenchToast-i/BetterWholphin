@@ -10,6 +10,7 @@ import androidx.compose.foundation.Image
 import androidx.compose.foundation.background
 import androidx.compose.foundation.interaction.MutableInteractionSource
 import androidx.compose.foundation.interaction.collectIsFocusedAsState
+import androidx.compose.foundation.text.KeyboardOptions
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
@@ -33,15 +34,19 @@ import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.draw.clip
 import androidx.compose.ui.focus.FocusRequester
 import androidx.compose.ui.focus.focusRequester
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.platform.LocalResources
 import androidx.compose.ui.res.stringResource
+import androidx.compose.ui.graphics.Brush
+import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.text.input.ImeAction
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.dp
+import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.hilt.lifecycle.viewmodel.compose.hiltViewModel
-import androidx.tv.material3.ListItem
 import androidx.tv.material3.MaterialTheme
 import androidx.tv.material3.Text
 import androidx.tv.material3.surfaceColorAtElevation
@@ -84,6 +89,10 @@ import com.github.damontecres.wholphin.ui.setup.seerr.SeerrDialog
 import com.github.damontecres.wholphin.ui.setup.seerr.SeerrDialogMode
 import com.github.damontecres.wholphin.ui.setup.seerr.SwitchSeerrViewModel
 import com.github.damontecres.wholphin.ui.showToast
+import com.github.damontecres.wholphin.ui.theme.GlassTokens
+import com.github.damontecres.wholphin.ui.theme.GlassType
+import com.github.damontecres.wholphin.ui.theme.LocalLiquidGlass
+import com.github.damontecres.wholphin.ui.theme.glassSurface
 import com.github.damontecres.wholphin.ui.tryRequestFocus
 import com.github.damontecres.wholphin.util.DataLoadingState
 import com.github.damontecres.wholphin.util.ExceptionHandler
@@ -113,6 +122,22 @@ fun PreferencesContent(
     val state = rememberLazyListState()
     var preferences by remember { mutableStateOf(initialPreferences) }
     val currentUser by viewModel.currentUser.collectAsState()
+    val accountPreferences by viewModel.accountPreferences.collectAsState()
+    // The settings list is drawn from one preference object, but two rows come from the
+    // account overlay. This resolved copy is what the conditional groups and those two rows
+    // read, so turning Liquid Glass on for this profile reveals the top-bar controls even when
+    // the device switch is off.
+    val effectivePreferences =
+        remember(preferences, accountPreferences) {
+            preferences.toBuilder().apply {
+                val accountInterface =
+                    preferences.interfacePreferences.toBuilder().apply {
+                        accountPreferences.liquidGlass?.let { liquidGlass = it }
+                        accountPreferences.tmdbApiKey?.let { tmdbApiKey = it }
+                    }.build()
+                interfacePreferences = accountInterface
+            }.build()
+        }
     var showPinFlow by remember { mutableStateOf(false) }
     var showVersionDialog by remember { mutableStateOf(false) }
     val players by viewModel.externalPlayers.collectAsState()
@@ -217,37 +242,75 @@ fun PreferencesContent(
         LaunchedEffect(Unit) {
             focusRequester.tryRequestFocus()
         }
+        val glass = LocalLiquidGlass.current
         Column(
-            modifier = Modifier.background(MaterialTheme.colorScheme.surfaceColorAtElevation(1.dp)),
+            // In glass mode the sheet itself is the surface, so painting a theme colour here
+            // would cover it with an opaque slab.
+            modifier =
+                if (glass) {
+                    Modifier
+                } else {
+                    Modifier.background(MaterialTheme.colorScheme.surfaceColorAtElevation(1.dp))
+                },
         ) {
             Text(
                 text = stringResource(screenTitle),
-                style = MaterialTheme.typography.headlineSmall,
-                color = MaterialTheme.colorScheme.onSurface,
-                textAlign = TextAlign.Center,
+                style = if (glass) GlassType.pageTitle else MaterialTheme.typography.headlineSmall,
+                color = if (glass) Color.White else MaterialTheme.colorScheme.onSurface,
+                textAlign = if (glass) TextAlign.Start else TextAlign.Center,
                 modifier =
                     Modifier
                         .fillMaxWidth()
-                        .padding(vertical = 8.dp),
+                        .padding(
+                            start = if (glass) 26.dp else 0.dp,
+                            top = if (glass) 18.dp else 8.dp,
+                            bottom = if (glass) 14.dp else 8.dp,
+                        ),
             )
             LazyColumn(
                 state = state,
                 horizontalAlignment = Alignment.Start,
                 verticalArrangement = Arrangement.spacedBy(0.dp),
-                contentPadding = PaddingValues(16.dp),
-                modifier = Modifier.fillMaxSize(),
+                contentPadding =
+                    if (glass) {
+                        PaddingValues(start = 18.dp, end = 22.dp, top = 4.dp, bottom = 24.dp)
+                    } else {
+                        PaddingValues(16.dp)
+                    },
+                // Weight, not fillMaxSize: the list is the *remainder* of the sheet under the
+                // title. `fillMaxSize` measured it against the whole column, so the sheet's last
+                // rows were painted past the pane's rounded bottom and cut off by the screen
+                // edge — a settings page that looks like it is missing its final switch.
+                modifier = Modifier.weight(1f).fillMaxWidth(),
             ) {
                 serverVersionMessage?.let { message ->
                     item {
-                        ListItem(
-                            selected = false,
-                            enabled = true,
-                            onClick = {},
-                            headlineContent = {
-                                PreferenceTitle(message, color = MaterialTheme.colorScheme.error)
-                            },
-                            modifier = Modifier,
-                        )
+                        // A server warning is not a setting. It gets its own tinted card above
+                        // the list instead of sitting in the group as though it were a row the
+                        // viewer could open.
+                        Box(
+                            modifier =
+                                Modifier
+                                    .fillMaxWidth()
+                                    .padding(bottom = 12.dp)
+                                    .ifElse(
+                                        glass,
+                                        Modifier
+                                            .clip(RoundedCornerShape(GlassTokens.rowRadius))
+                                            .background(Color(0xFF3A2410).copy(alpha = 0.72f)),
+                                    ),
+                        ) {
+                            Text(
+                                text = message,
+                                style =
+                                    if (glass) {
+                                        GlassType.settingsSummary.copy(color = Color(0xFFFFC46B))
+                                    } else {
+                                        MaterialTheme.typography.bodySmall.copy(color = MaterialTheme.colorScheme.error)
+                                    },
+                                modifier = Modifier.padding(horizontal = 16.dp, vertical = 12.dp),
+                            )
+                        }
                     }
                 }
                 if (showUpdate) {
@@ -271,6 +334,7 @@ fun PreferencesContent(
                             interactionSource = interactionSource,
                             modifier =
                                 Modifier
+                                    .glassPreferenceRow(first = true, last = true)
                                     .focusRequester(updateFocusRequester)
                                     .focusRequester(firstFocusRequester)
                                     .playSoundOnFocus(movementSounds)
@@ -287,22 +351,42 @@ fun PreferencesContent(
                 }
 
                 prefList.forEachIndexed { groupIndex, group ->
-                    item {
+                    val headerContent: @Composable () -> Unit = {
                         Text(
-                            text = stringResource(group.title),
-                            style = MaterialTheme.typography.titleMedium,
-                            color = MaterialTheme.colorScheme.onSurface,
+                            text = stringResource(group.title).uppercase(),
+                            style =
+                                if (glass) GlassType.sectionLabel else MaterialTheme.typography.titleMedium,
+                            color = if (glass) Color.White.copy(alpha = 0.54f) else MaterialTheme.colorScheme.onSurface,
                             textAlign = TextAlign.Start,
                             modifier =
                                 Modifier
                                     .fillMaxWidth()
-                                    .padding(top = 8.dp, bottom = 4.dp),
+                                    .ifElse(
+                                        glass,
+                                        Modifier.background(
+                                            Brush.verticalGradient(
+                                                0f to Color.Black.copy(alpha = 0.55f),
+                                                0.72f to Color.Black.copy(alpha = 0.28f),
+                                                1f to Color.Transparent,
+                                            ),
+                                        ),
+                                    ).padding(
+                                        start = if (glass) GlassTokens.rowInset else 0.dp,
+                                        top = if (glass) 26.dp else 8.dp,
+                                        bottom = if (glass) 7.dp else 4.dp,
+                                    ),
                         )
                     }
+                    // Deliberately not a sticky header on glass. A pinned group label is pushed
+                    // up over the last row of its own group as the next group arrives, and because
+                    // the sheet's header wash is translucent, the row's title stayed readable
+                    // underneath: two labels drawn on top of each other at every group boundary.
+                    // The group name scrolls with its rows instead; the sheet title stays pinned.
+                    item(key = "group_$groupIndex") { headerContent() }
                     val groupPreferences =
                         group.preferences +
                             group.conditionalPreferences
-                                .filter { it.condition.invoke(preferences) }
+                                .filter { it.condition.invoke(effectivePreferences) }
                                 .map { it.preferences }
                                 .flatten()
                     groupPreferences.forEachIndexed { prefIndex, pref ->
@@ -310,12 +394,15 @@ fun PreferencesContent(
                         val isFirst = groupIndex == 0 && prefIndex == 0 && !showUpdate
                         val isLast =
                             groupIndex == prefList.lastIndex && prefIndex == groupPreferences.lastIndex
-                        item {
+                        item(key = "pref_${groupIndex}_$prefIndex") {
                             val interactionSource = remember { MutableInteractionSource() }
                             val focused = interactionSource.collectIsFocusedAsState().value
                             val focusModifier =
                                 Modifier
-                                    .ifElse(
+                                    .glassPreferenceRow(
+                                        first = prefIndex == 0,
+                                        last = prefIndex == groupPreferences.lastIndex,
+                                    ).ifElse(
                                         groupIndex == focusedIndex.first && prefIndex == focusedIndex.second,
                                         Modifier.focusRequester(focusRequester),
                                     ).lazyListWrapScrolling(
@@ -667,8 +754,74 @@ fun PreferencesContent(
                                     }
                                 }
 
+                                AppPreference.LiquidGlass -> {
+                                    // Per account: the device file holds the default, the
+                                    // account overlay holds this profile's choice.
+                                    val value = effectivePreferences.interfacePreferences.liquidGlass
+                                    SwitchPreference(
+                                        title = stringResource(R.string.liquid_glass_mode),
+                                        value = value,
+                                        onClick = { viewModel.setLiquidGlass(!value) },
+                                        summaryOn = stringResource(R.string.liquid_glass_mode_summary),
+                                        summaryOff = stringResource(R.string.liquid_glass_mode_summary),
+                                        modifier = focusModifier,
+                                        interactionSource = interactionSource,
+                                    )
+                                }
+
+                                AppPreference.SeerrEnabled -> {
+                                    // Per account, like the glass switch: a request identity is a
+                                    // person's, so one profile can keep Discover while another
+                                    // does not see the door at all.
+                                    val value = accountPreferences.seerrEnabled
+                                    SwitchPreference(
+                                        title = stringResource(R.string.seerr_enabled),
+                                        value = value,
+                                        onClick = { viewModel.setSeerrEnabled(!value) },
+                                        summaryOn = stringResource(R.string.seerr_enabled_summary),
+                                        summaryOff = stringResource(R.string.seerr_enabled_summary),
+                                        modifier = focusModifier,
+                                        interactionSource = interactionSource,
+                                    )
+                                }
+
+                                AppPreference.TmdbApiKey -> {
+                                    var showKeyDialog by remember { mutableStateOf(false) }
+                                    ClickPreference(
+                                        title = stringResource(R.string.tmdb_api_key),
+                                        onClick = { showKeyDialog = true },
+                                        summary = stringResource(R.string.tmdb_api_key_summary),
+                                        interactionSource = interactionSource,
+                                        modifier = focusModifier,
+                                    )
+                                    if (showKeyDialog) {
+                                        StringInputDialog(
+                                            input =
+                                                StringInput(
+                                                    title = stringResource(R.string.tmdb_api_key),
+                                                    value = effectivePreferences.interfacePreferences.tmdbApiKey,
+                                                    keyboardOptions =
+                                                        KeyboardOptions(
+                                                            autoCorrectEnabled = false,
+                                                            imeAction = ImeAction.Done,
+                                                        ),
+                                                    onSubmit = {
+                                                        viewModel.setTmdbApiKey(it)
+                                                        showKeyDialog = false
+                                                    },
+                                                ),
+                                            onSave = {
+                                                viewModel.setTmdbApiKey(it)
+                                                showKeyDialog = false
+                                            },
+                                            onDismissRequest = { showKeyDialog = false },
+                                            elevation = 3.dp,
+                                        )
+                                    }
+                                }
+
                                 else -> {
-                                    val value = pref.getter.invoke(preferences)
+                                    val value = pref.getter.invoke(effectivePreferences)
                                     ComposablePreference(
                                         preference = pref,
                                         value = value,
@@ -801,8 +954,9 @@ fun PreferencesPage(
     preferenceScreenOption: PreferenceScreenOption,
     modifier: Modifier = Modifier,
 ) {
+    val liquidGlass = LocalLiquidGlass.current
     Box(
-        modifier = modifier.background(MaterialTheme.colorScheme.background),
+        modifier = if (liquidGlass) modifier else modifier.background(MaterialTheme.colorScheme.background),
     ) {
         when (preferenceScreenOption) {
             PreferenceScreenOption.BASIC,
@@ -814,13 +968,43 @@ fun PreferencesPage(
             PreferenceScreenOption.EXPERIMENTAL,
             PreferenceScreenOption.HDR_FORMATS,
             -> {
+                val pageModifier =
+                    Modifier
+                        // Glass settings are the one page that reads as a sheet rather than a
+                        // stage: wide enough for a title, a summary and a switch on one line,
+                        // centred so the artwork balances on both sides instead of being pushed
+                        // into a narrow strip on the left.
+                        .fillMaxWidth(if (liquidGlass) 0.66f else 0.4f)
+                        .fillMaxHeight()
+                        .align(if (liquidGlass) Alignment.Center else Alignment.TopEnd)
+                if (liquidGlass) {
+                    // A single pane behind the whole list, so scrolling settings feel like one
+                    // sheet of glass rather than a stack of unrelated rows.
+                    Box(
+                        modifier =
+                            pageModifier
+                                // Air at the foot as well as the top: a pane that ends flush
+                                // with the screen edge loses its bottom corners and reads as a
+                                // page that scrolled instead of as a sheet.
+                                .padding(top = 10.dp, bottom = 22.dp)
+                                .glassSurface(
+                                    shape = RoundedCornerShape(GlassTokens.panelRadius),
+                                    // A settings sheet is a text surface, not a hero: it takes a
+                                    // light, even smoke so the list holds over any artwork, while
+                                    // the edges still refract. The lens is never turned off.
+                                    tint = Color.Black.copy(alpha = 0.30f),
+                                    scrim = 0.55f,
+                                ),
+                    )
+                }
                 PreferencesContent(
                     initialPreferences,
                     preferenceScreenOption,
-                    Modifier
-                        .fillMaxWidth(.4f)
-                        .fillMaxHeight()
-                        .align(Alignment.TopEnd),
+                    if (liquidGlass) {
+                        pageModifier.padding(top = 10.dp, bottom = 22.dp, start = 4.dp, end = 4.dp)
+                    } else {
+                        pageModifier
+                    },
                 )
             }
         }

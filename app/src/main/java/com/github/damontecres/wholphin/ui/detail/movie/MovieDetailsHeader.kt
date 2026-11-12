@@ -29,6 +29,7 @@ import com.github.damontecres.wholphin.ui.components.TitleOrLogo
 import com.github.damontecres.wholphin.ui.components.VideoStreamDetails
 import com.github.damontecres.wholphin.ui.isNotNullOrBlank
 import com.github.damontecres.wholphin.ui.letNotEmpty
+import com.github.damontecres.wholphin.ui.theme.LocalLiquidGlass
 import com.github.damontecres.wholphin.util.ExceptionHandler
 import kotlinx.coroutines.launch
 import org.jellyfin.sdk.model.api.PersonKind
@@ -45,6 +46,7 @@ fun MovieDetailsHeader(
     val dto = movie.data
     val context = LocalContext.current
     val scope = rememberCoroutineScope()
+    val glass = LocalLiquidGlass.current
     Column(
         verticalArrangement = Arrangement.spacedBy(4.dp),
         modifier = modifier,
@@ -67,6 +69,10 @@ fun MovieDetailsHeader(
                 movie.ui.quickDetails,
                 movie.timeRemainingOrRuntime,
                 Modifier.padding(start = HeaderUtils.startPadding),
+                // The glass pane is 60% of the page: as a Row of separate texts the last
+                // piece is measured past the pane's edge and clipped, which left "Ends at …"
+                // as a lone dot at the end of the line.
+                oneLine = glass,
             )
 
             dto.genres?.letNotEmpty {

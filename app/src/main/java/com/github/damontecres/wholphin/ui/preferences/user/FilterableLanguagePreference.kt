@@ -16,6 +16,7 @@ import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.focus.FocusRequester
 import androidx.compose.ui.focus.focusRequester
 import androidx.compose.ui.res.stringResource
@@ -27,6 +28,12 @@ import com.github.damontecres.wholphin.R
 import com.github.damontecres.wholphin.ui.components.SearchEditTextBox
 import com.github.damontecres.wholphin.ui.components.SelectedLeadingContent
 import com.github.damontecres.wholphin.ui.isNotNullOrBlank
+import com.github.damontecres.wholphin.ui.preferences.glassListItemColors
+import com.github.damontecres.wholphin.ui.preferences.glassListItemGlow
+import com.github.damontecres.wholphin.ui.preferences.glassListItemScale
+import com.github.damontecres.wholphin.ui.preferences.glassListItemShape
+import com.github.damontecres.wholphin.ui.theme.GlassType
+import com.github.damontecres.wholphin.ui.theme.LocalLiquidGlass
 import com.github.damontecres.wholphin.ui.tryRequestFocus
 import com.github.damontecres.wholphin.util.WholphinDispatchers
 import kotlinx.coroutines.delay
@@ -69,6 +76,7 @@ fun FilterableLanguagePreference(
         }
     }
 
+    val glass = LocalLiquidGlass.current
     Column(
         verticalArrangement = Arrangement.spacedBy(8.dp),
         modifier =
@@ -76,8 +84,8 @@ fun FilterableLanguagePreference(
     ) {
         Text(
             text = stringResource(title),
-            style = MaterialTheme.typography.titleLarge,
-            color = MaterialTheme.colorScheme.onSurface,
+            style = if (glass) GlassType.sectionTitle else MaterialTheme.typography.titleLarge,
+            color = if (glass) Color.White else MaterialTheme.colorScheme.onSurface,
         )
         val listState = rememberLazyListState()
         val focusRequesters = remember { List(filteredOptions.size) { FocusRequester() } }
@@ -136,6 +144,10 @@ fun FilterableLanguagePreference(
                                     }
                                 }
                             },
+                        colors = glassListItemColors(),
+                        shape = glassListItemShape(),
+                        scale = glassListItemScale(),
+                        glow = glassListItemGlow(),
                         modifier = Modifier.focusRequester(focusRequesters[index]),
                     )
                 }

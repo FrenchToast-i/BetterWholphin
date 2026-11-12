@@ -197,7 +197,11 @@ fun Modifier.enableMarquee(focused: Boolean) =
             velocity = 40.dp,
         )
     } else {
-        basicMarquee(animationMode = MarqueeAnimationMode.WhileFocused)
+        // Nothing while unfocused. `basicMarquee` measures its child with unbounded width so it
+        // can scroll it, which also removes the ellipsis a `Text` would otherwise draw: every
+        // long caption was hard-clipped mid-letter ("Ant-Man Collectic", "The Avengers Col")
+        // instead of ending in one. Applying it only while scrolling keeps the mark.
+        this
     }
 
 @Composable

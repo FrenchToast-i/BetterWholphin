@@ -70,6 +70,10 @@ import com.github.damontecres.wholphin.ui.dimAndBlur
 import com.github.damontecres.wholphin.ui.isNotNullOrBlank
 import com.github.damontecres.wholphin.ui.rememberInt
 import com.github.damontecres.wholphin.ui.serverSupportedMessage
+import com.github.damontecres.wholphin.ui.theme.GlassTokens
+import com.github.damontecres.wholphin.ui.theme.GlassType
+import com.github.damontecres.wholphin.ui.theme.LocalLiquidGlass
+import com.github.damontecres.wholphin.ui.theme.glassSurface
 import com.github.damontecres.wholphin.ui.tryRequestFocus
 import com.github.damontecres.wholphin.util.LoadingState
 import org.jellyfin.sdk.model.ServerVersion
@@ -108,35 +112,51 @@ private fun SwitchServerContentInternal(
     var showAddServer by remember { mutableStateOf(false) }
     var showDeleteDialog by remember { mutableStateOf<JellyfinServer?>(null) }
     var focusedIndex by rememberInt(0)
+    val glass = LocalLiquidGlass.current
     Box(
         modifier = modifier.dimAndBlur(showAddServer || showDeleteDialog != null),
     ) {
         Column(
             horizontalAlignment = Alignment.CenterHorizontally,
-            verticalArrangement = Arrangement.spacedBy(24.dp),
+            verticalArrangement = Arrangement.spacedBy(if (glass) 20.dp else 28.dp),
             modifier =
-                Modifier
-                    .fillMaxWidth()
-                    // Center the content like the Select User screen
-                    .align(Alignment.Center)
-                    .padding(16.dp),
+                if (glass) {
+                    Modifier
+                        .fillMaxWidth(0.58f)
+                        .align(Alignment.Center)
+                        .glassSurface(
+                            shape = GlassTokens.panelShape,
+                            tint = GlassTokens.sheetTint,
+                            scrim = GlassTokens.SHEET_SCRIM,
+                            elevation = GlassTokens.dialogElevation,
+                        ).padding(horizontal = 32.dp, vertical = 28.dp)
+                } else {
+                    Modifier
+                        .fillMaxWidth()
+                        // Center the content like the Select User screen
+                        .align(Alignment.Center)
+                        .padding(16.dp)
+                },
         ) {
-            // Match SwitchUser header height (title + subtitle) to align icons vertically across screens
             Column(
                 horizontalAlignment = Alignment.CenterHorizontally,
-                verticalArrangement = Arrangement.spacedBy(8.dp),
+                verticalArrangement = Arrangement.spacedBy(if (glass) 4.dp else 8.dp),
             ) {
                 Text(
                     text = stringResource(R.string.select_server),
-                    style = MaterialTheme.typography.displaySmall,
-                    color = MaterialTheme.colorScheme.onSurface,
+                    style = if (glass) GlassType.pageTitle else MaterialTheme.typography.displaySmall,
+                    color = if (glass) Color.White else MaterialTheme.colorScheme.onSurface,
                 )
-                // Invisible subtitle placeholder to mirror the server name line on the Select User screen
-                Text(
-                    text = "Server placeholder",
-                    style = MaterialTheme.typography.titleLarge,
-                    color = Color.Transparent,
-                )
+                if (glass) {
+                    // A quiet line of context under the title instead of an invisible spacer
+                    // pretending the screens are aligned: these pages are never on screen at the
+                    // same time, so what matters is that each one reads on its own.
+                    Text(
+                        text = stringResource(R.string.select_server_summary),
+                        style = GlassType.meta.copy(color = Color.White.copy(alpha = 0.62f)),
+                        color = Color.White.copy(alpha = 0.62f),
+                    )
+                }
             }
 
             // Horizontal scrollable list of server icons - centered
@@ -158,8 +178,9 @@ private fun SwitchServerContentInternal(
                     }
                 }
                 LazyRow(
-                    horizontalArrangement = Arrangement.spacedBy(24.dp),
-                    contentPadding = PaddingValues(horizontal = 48.dp, vertical = 16.dp),
+                    horizontalArrangement =
+                        Arrangement.spacedBy(if (glass) GlassTokens.profileGap else 24.dp),
+                    contentPadding = PaddingValues(horizontal = if (glass) 4.dp else 48.dp, vertical = 8.dp),
                     modifier =
                         Modifier
                             .wrapContentWidth()
@@ -211,14 +232,16 @@ private fun SwitchServerContentInternal(
                     }
                 }
             }
-            // Non-focusable spacer to mirror the space occupied by the "Switch Servers" button
-            Spacer(
-                modifier =
-                    Modifier
-                        .fillMaxWidth()
-                        .height(56.dp),
-                // approximate TV button height
-            )
+            if (!glass) {
+                // Non-focusable spacer to mirror the space occupied by the "Switch Servers" button
+                Spacer(
+                    modifier =
+                        Modifier
+                            .fillMaxWidth()
+                            .height(56.dp),
+                    // approximate TV button height
+                )
+            }
         }
 
         val errorMessage =

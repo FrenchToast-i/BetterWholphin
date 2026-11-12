@@ -9,10 +9,13 @@ import androidx.compose.foundation.interaction.MutableInteractionSource
 import androidx.compose.foundation.interaction.collectIsFocusedAsState
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Column
+import androidx.compose.foundation.layout.PaddingValues
 import androidx.compose.foundation.layout.Row
+import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.offset
 import androidx.compose.foundation.layout.padding
+import androidx.compose.foundation.layout.width
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
@@ -33,6 +36,9 @@ import androidx.tv.material3.MaterialTheme
 import androidx.tv.material3.Text
 import com.github.damontecres.wholphin.R
 import com.github.damontecres.wholphin.data.model.BaseItem
+import com.github.damontecres.wholphin.data.model.WatchParty
+import com.github.damontecres.wholphin.ui.FontAwesome
+import com.github.damontecres.wholphin.ui.components.Button
 import com.github.damontecres.wholphin.ui.formatTime
 import com.github.damontecres.wholphin.ui.playback.ControllerViewState
 import com.github.damontecres.wholphin.ui.playback.PlaybackDialogType
@@ -63,7 +69,11 @@ fun PlaybackController(
     currentSegment: MediaSegmentDto?,
     onChangeState: (OverlayViewState) -> Unit,
     modifier: Modifier = Modifier,
+    sleepTimerRemainingSeconds: Int? = null,
+    onSleepTimerClick: () -> Unit = {},
     seekBarInteractionSource: MutableInteractionSource = remember { MutableInteractionSource() },
+    watchParty: WatchParty? = null,
+    onWatchPartyClick: () -> Unit = {},
 ) {
     Column(
         verticalArrangement = Arrangement.spacedBy(8.dp),
@@ -86,6 +96,10 @@ fun PlaybackController(
             onSeekProgress = onSeekBarChange,
             seekBarInteractionSource = seekBarInteractionSource,
             currentSegment = currentSegment,
+            sleepTimerRemainingSeconds = sleepTimerRemainingSeconds,
+            onSleepTimerClick = onSleepTimerClick,
+            watchParty = watchParty,
+            onWatchPartyClick = onWatchPartyClick,
             modifier = Modifier,
         )
         when (nextState) {
@@ -148,7 +162,11 @@ fun Controller(
     currentSegment: MediaSegmentDto?,
     modifier: Modifier = Modifier,
     subtitle: String? = null,
+    sleepTimerRemainingSeconds: Int? = null,
+    onSleepTimerClick: () -> Unit = {},
     seekBarInteractionSource: MutableInteractionSource = remember { MutableInteractionSource() },
+    watchParty: WatchParty? = null,
+    onWatchPartyClick: () -> Unit = {},
 ) {
     val seekBarFocused by seekBarInteractionSource.collectIsFocusedAsState()
     val verticalOffset by animateDpAsState(
@@ -214,14 +232,40 @@ fun Controller(
                         delay(1.seconds)
                     }
                 }
-                Text(
-                    text = stringResource(R.string.ends_at, endTimeStr),
-                    color = MaterialTheme.colorScheme.onSurface,
-                    style = MaterialTheme.typography.labelLarge,
-                    modifier =
-                        Modifier
-                            .padding(end = 32.dp),
-                )
+                val party = watchParty
+                if (party != null) {
+                    // A party replaces the end-time readout rather than sitting beside it: the
+                    // header row has one spare slot, and "who is in this with me" is the more
+                    // useful fact while the room controls the transport. It is also the way back
+                    // to the dialog (leave, or see who joined) without leaving the player.
+                    Button(
+                        onClick = onWatchPartyClick,
+                        glassFilled = true,
+                        contentPadding = PaddingValues(horizontal = 14.dp, vertical = 0.dp),
+                        contentHeight = 32.dp,
+                        modifier = Modifier.padding(end = 32.dp),
+                    ) {
+                        Text(
+                            text = stringResource(R.string.fa_users),
+                            fontFamily = FontAwesome,
+                            fontSize = 14.sp,
+                        )
+                        Spacer(Modifier.width(6.dp))
+                        Text(
+                            text = stringResource(R.string.watch_party_members, party.members),
+                            style = MaterialTheme.typography.labelLarge,
+                        )
+                    }
+                } else {
+                    Text(
+                        text = stringResource(R.string.ends_at, endTimeStr),
+                        color = MaterialTheme.colorScheme.onSurface,
+                        style = MaterialTheme.typography.labelLarge,
+                        modifier =
+                            Modifier
+                                .padding(end = 32.dp),
+                    )
+                }
             }
         }
         PlaybackControls(
@@ -243,6 +287,8 @@ fun Controller(
             skipBackOnResume = skipBackOnResume,
             currentSegment = currentSegment,
             onClickPlaybackDialogType = onClickPlaybackDialogType,
+            sleepTimerRemainingSeconds = sleepTimerRemainingSeconds,
+            onSleepTimerClick = onSleepTimerClick,
         )
     }
 }

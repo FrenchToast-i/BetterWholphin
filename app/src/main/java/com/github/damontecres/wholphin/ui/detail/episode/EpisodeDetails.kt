@@ -38,6 +38,7 @@ import com.github.damontecres.wholphin.ui.components.ExpandablePlayButtons
 import com.github.damontecres.wholphin.ui.components.HeaderUtils
 import com.github.damontecres.wholphin.ui.components.LoadingPage
 import com.github.damontecres.wholphin.ui.components.Optional
+import com.github.damontecres.wholphin.ui.watchparty.WatchPartyDialog
 import com.github.damontecres.wholphin.ui.data.AddPlaylistViewModel
 import com.github.damontecres.wholphin.ui.data.ChooseVersionParams
 import com.github.damontecres.wholphin.ui.data.ItemDetailsDialog
@@ -74,6 +75,7 @@ fun EpisodeDetails(
     var overviewDialog by remember { mutableStateOf<ItemDetailsDialogInfo?>(null) }
     var showContextMenu by remember { mutableStateOf<ContextMenu?>(null) }
     var showPlaylistDialog by remember { mutableStateOf<Optional<UUID>>(Optional.absent()) }
+    var showWatchParty by remember { mutableStateOf(false) }
     val playlistState by playlistViewModel.playlistState.collectAsState()
     val canDelete by viewModel.canDelete.collectAsState()
 
@@ -171,8 +173,23 @@ fun EpisodeDetails(
                 canDelete = canDelete,
                 onConfirmDelete = { viewModel.deleteItem(ep) },
                 onChooseVersion = { contextActions.onChooseVersion.invoke(ep, it) },
+                watchTogetherOnClick = { showWatchParty = true },
                 modifier = modifier,
             )
+            if (showWatchParty) {
+                WatchPartyDialog(
+                    title = ep.title,
+                    onDismissRequest = { showWatchParty = false },
+                    onStartParty = {
+                        showWatchParty = false
+                        viewModel.navigateTo(Destination.Playback(ep.id, 0))
+                    },
+                    onJoined = { target ->
+                        showWatchParty = false
+                        viewModel.navigateTo(Destination.Playback(target.itemId, target.positionMs))
+                    },
+                )
+            }
         }
     }
     overviewDialog?.let { info ->
@@ -228,6 +245,7 @@ fun EpisodeDetailsContent(
     canDelete: Boolean,
     onConfirmDelete: () -> Unit,
     onChooseVersion: (MediaSourceInfo) -> Unit,
+    watchTogetherOnClick: (() -> Unit)? = null,
     modifier: Modifier = Modifier,
 ) {
     val context = LocalContext.current
@@ -288,6 +306,7 @@ fun EpisodeDetailsContent(
                         trailerOnClick = {},
                         canDelete = canDelete,
                         onConfirmDelete = onConfirmDelete,
+                        watchTogetherOnClick = watchTogetherOnClick,
                         chooseVersionParams =
                             remember(chosenStreams, ep, onChooseVersion) {
                                 ChooseVersionParams(

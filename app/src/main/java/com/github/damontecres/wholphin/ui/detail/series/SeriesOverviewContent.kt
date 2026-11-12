@@ -64,6 +64,7 @@ import com.github.damontecres.wholphin.ui.ifElse
 import com.github.damontecres.wholphin.ui.logTab
 import com.github.damontecres.wholphin.ui.playback.isPlayKeyUp
 import com.github.damontecres.wholphin.ui.rememberInt
+import com.github.damontecres.wholphin.ui.theme.LocalLiquidGlass
 import com.github.damontecres.wholphin.ui.tryRequestFocus
 import com.github.damontecres.wholphin.ui.util.StringStringProvider
 import com.github.damontecres.wholphin.ui.util.rememberDelayedNestedScroll
@@ -170,6 +171,14 @@ fun SeriesOverviewContent(
                             PaddingValues(start = 0.dp, end = 16.dp)
                         }
                     }
+                TitleOrLogo(
+                    item = series,
+                    showLogo = preferences.appPreferences.interfacePreferences.showLogos,
+                    modifier = Modifier.padding(start = HeaderUtils.startPadding),
+                )
+                // Seasons belong to the show, so they sit under the show's own logo rather
+                // than above it. Above the title they read as a second row of page chrome;
+                // here they read as a picker for the episode list underneath.
                 TabRow(
                     selectedTabIndex = selectedTabIndex,
                     tabs = tabs,
@@ -185,13 +194,9 @@ fun SeriesOverviewContent(
                         Modifier
                             .focusRequester(tabRowFocusRequester)
                             .padding(paddingValues)
-                            .padding(bottom = 4.dp)
-                            .fillMaxWidth(),
-                )
-                TitleOrLogo(
-                    item = series,
-                    showLogo = preferences.appPreferences.interfacePreferences.showLogos,
-                    modifier = Modifier.padding(start = HeaderUtils.startPadding),
+                            .padding(top = 6.dp, bottom = 4.dp)
+                            // Glass mode hugs its tabs; only the classic strip needs the width.
+                            .then(if (LocalLiquidGlass.current) Modifier else Modifier.fillMaxWidth()),
                 )
                 FocusedEpisodeHeader(
                     preferences = preferences,
@@ -205,7 +210,9 @@ fun SeriesOverviewContent(
                             }
                         }
                     },
-                    modifier = Modifier.fillMaxWidth(.6f),
+                    // The pane's own drop shadow would otherwise fill the column's 4dp gap and
+                    // fuse it to the season strip above and the episode row below.
+                    modifier = Modifier.fillMaxWidth(.6f).padding(top = 8.dp, bottom = 10.dp),
                 )
 
 //                key(position.seasonTabIndex) {
@@ -276,7 +283,10 @@ fun SeriesOverviewContent(
                                                 episodeIndex == epPosition,
                                                 Modifier.focusRequester(episodeRowFocusRequester),
                                             ).background(
-                                                if (episodeIndex != position.episodeRowIndex) {
+                                                // A black backing is invisible against the classic
+                                                // page and a black brick over artwork: glass mode
+                                                // lets the dimming alone carry the unfocused cards.
+                                                if (episodeIndex != position.episodeRowIndex && !LocalLiquidGlass.current) {
                                                     Color.Black
                                                 } else {
                                                     Color.Transparent

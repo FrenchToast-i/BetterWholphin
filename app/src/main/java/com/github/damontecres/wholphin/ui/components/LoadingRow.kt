@@ -13,6 +13,7 @@ import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.dp
 import androidx.tv.material3.MaterialTheme
 import androidx.tv.material3.Text
+import com.github.damontecres.wholphin.ui.theme.LocalLiquidGlass
 import com.github.damontecres.wholphin.R
 import com.github.damontecres.wholphin.data.model.BaseItem
 import com.github.damontecres.wholphin.ui.Cards
@@ -105,8 +106,12 @@ fun LoadingRowPlaceholder(
     title: String,
     message: String,
     modifier: Modifier = Modifier,
-    messageColor: Color = MaterialTheme.colorScheme.onBackground,
+    messageColor: Color = Color.Unspecified,
 ) {
+    // A row's title and its "nothing here" line sit straight on the artwork. The glass scheme's
+    // onBackground is a dark ink, which is invisible there — and a placeholder is exactly what a
+    // viewer sees when a row is still loading, so it cannot be the one unreadable thing on the page.
+    val glass = LocalLiquidGlass.current
     Column(
         verticalArrangement = Arrangement.spacedBy(8.dp),
         modifier = modifier.padding(bottom = 32.dp),
@@ -114,12 +119,17 @@ fun LoadingRowPlaceholder(
         Text(
             text = title,
             style = MaterialTheme.typography.titleLarge,
-            color = MaterialTheme.colorScheme.onBackground,
+            color = if (glass) Color.White else MaterialTheme.colorScheme.onBackground,
         )
         Text(
             text = message,
             style = MaterialTheme.typography.titleMedium,
-            color = messageColor,
+            color =
+                when {
+                    messageColor != Color.Unspecified -> messageColor
+                    glass -> Color.White.copy(alpha = 0.66f)
+                    else -> MaterialTheme.colorScheme.onBackground
+                },
         )
     }
 }

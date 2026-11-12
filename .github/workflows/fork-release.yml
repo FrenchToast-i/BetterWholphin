@@ -1,0 +1,92 @@
+name: Release
+
+# Publishes the signed APKs the in-app updater reads.
+#
+# One tag, one release: pushing `v1.1.0` builds `assembleDefaultRelease`, renames the APKs to the
+# names `UpdateChecker.getDownloadUrl` looks for, and publishes them as the latest release. The
+# updater compares the *release title* with the installed `versionName`, so the title has to stay
+# the bare tag (`v1.1.0`) — a title like "Version 1.1.0" parses to no version and the app would
+# never see the update.
+#
+# Secrets (Settings -> Secrets and variables -> Actions):
+#   SIGNING_KEY        base64 of the release keystore (.jks)
+#   KEY_ALIAS          key alias inside the keystore
+#   KEY_PASSWORD       key password
+#   KEY_STORE_PASSWORD keystore password
+# Builds without them produce an unsigned APK that cannot be installed over an earlier release.
+
+on:
+  push:
+    tags:
+      - "v*"
+
+defaults:
+  run:
+    shell: bash
+
+env:
+  GRADLE_OPTS: "-Dorg.gradle.jvmargs='-Xmx12g -XX:MaxMetaspaceSize=1024m'"
+
+jobs:
+  publish:
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v5
+        with:
+          # `versionName`/`versionCode` come from `git describe`/`git tag`; without the tags the
+          # build reports 0.0.0 and the update check compares against nothing.
+          fetch-depth: 0
+
+      - name: Setup JDK
+        uses: actions/setup-java@v5
+        with:
+          distribution: zulu
+          java-version: "21"
+
+      - name: Setup Android SDK
+        uses: android-actions/setup-android@v3
+        with:
+          # The project compiles against 37 and builds tools 37.0.0.
+          packages: "platform-tools platforms;android-37.0 build-tools;37.0.0"
+
+      - name: Build release
+        env:
+          CI: "true"
+          KEY_ALIAS: ${{ secrets.KEY_ALIAS }}
+          KEY_PASSWORD: ${{ secrets.KEY_PASSWORD }}
+          KEY_STORE_PASSWORD: ${{ secrets.KEY_STORE_PASSWORD }}
+          SIGNING_KEY: ${{ secrets.SIGNING_KEY }}
+        run: ./gradlew assembleDefaultRelease
+
+      - name: Name the APKs the updater looks for
+        run: |
+          # Wholphin-default-release-1.1.0-0-gabc1234-12-arm64-v8a.apk => Wholphin-arm64-v8a.apk
+          # The universal build drops the ABI suffix: Wholphin.apk
+          find app/build/outputs/apk/default/release -name '*.apk' -print0 |
+            while IFS= read -r -d '' line; do
+              # Take the file name only: the find result is a path, and prefixing the output
+              # directory to a path produced app/build/outputs/apk/app/build/... and failed.
+              short_name="$(basename "$line" | sed -E 's/-[0-9]+\.[0-9]+\.[0-9]+-[0-9]+-g[a-fA-F0-9]+-[0-9]+//' | sed -E 's/-default-release//')"
+              echo "$line => app/build/outputs/apk/$short_name"
+              cp "$line" "app/build/outputs/apk/$short_name"
+            done
+          ls -l app/build/outputs/apk/*.apk
+
+      - name: Verify signature
+        run: |
+          find app/build/outputs/apk -maxdepth 1 -name 'Wholphin*.apk' -print0 |
+            xargs -0 -n1 "$ANDROID_SDK_ROOT/build-tools/37.0.0/apksigner" verify --print-certs
+
+      - name: Publish
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          gh release create "$GITHUB_REF_NAME" \
+            --latest \
+            --verify-tag \
+            --title "$GITHUB_REF_NAME" \
+            --generate-notes \
+            app/build/outputs/apk/Wholphin*.apk

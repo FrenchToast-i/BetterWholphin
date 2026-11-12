@@ -37,6 +37,9 @@ import com.github.damontecres.wholphin.data.model.BaseItem
 import com.github.damontecres.wholphin.ui.components.CircularProgress
 import com.github.damontecres.wholphin.ui.components.ErrorMessage
 import com.github.damontecres.wholphin.ui.components.TextButton
+import com.github.damontecres.wholphin.ui.components.glassDialogSurface
+import com.github.damontecres.wholphin.ui.theme.GlassTokens
+import com.github.damontecres.wholphin.ui.theme.LocalLiquidGlass
 import com.github.damontecres.wholphin.ui.ifElse
 import com.github.damontecres.wholphin.ui.isNotNullOrBlank
 import com.github.damontecres.wholphin.ui.seasonEpisode
@@ -59,12 +62,15 @@ fun ProgramDialog(
         onDismissRequest = onDismissRequest,
     ) {
         val focusRequester = remember { FocusRequester() }
+        val glass = LocalLiquidGlass.current
         Box(
             modifier =
                 Modifier
-                    .background(
-                        MaterialTheme.colorScheme.surfaceColorAtElevation(5.dp),
-                        shape = RoundedCornerShape(16.dp),
+                    // A programme card is the guide's detail sheet, so it takes the same
+                    // smoked material as every other dialog instead of an opaque slab.
+                    .glassDialogSurface(
+                        shape = if (glass) GlassTokens.panelShape else RoundedCornerShape(16.dp),
+                        classicElevation = 5.dp,
                     ).focusRequester(focusRequester),
         ) {
             Column(
@@ -97,7 +103,7 @@ fun ProgramDialog(
                         LaunchedEffect(Unit) { focusRequester.tryRequestFocus() }
                         Text(
                             text = item.name ?: "",
-                            color = MaterialTheme.colorScheme.onSurface,
+                            color = if (glass) Color.White else MaterialTheme.colorScheme.onSurface,
                             style = MaterialTheme.typography.titleLarge,
                         )
                         if (dto.isSeries ?: false) {
@@ -107,7 +113,7 @@ fun ProgramDialog(
                                 ?.let {
                                     Text(
                                         text = it,
-                                        color = MaterialTheme.colorScheme.onSurface,
+                                        color = if (glass) Color.White else MaterialTheme.colorScheme.onSurface,
                                         style = MaterialTheme.typography.titleMedium,
                                     )
                                 }
@@ -127,13 +133,13 @@ fun ProgramDialog(
                             )
                         Text(
                             text = time,
-                            color = MaterialTheme.colorScheme.onSurface,
+                            color = if (glass) Color.White else MaterialTheme.colorScheme.onSurface,
                             style = MaterialTheme.typography.titleSmall,
                         )
                         dto.overview?.let { overview ->
                             Text(
                                 text = overview,
-                                color = MaterialTheme.colorScheme.onSurface,
+                                color = if (glass) Color.White else MaterialTheme.colorScheme.onSurface,
                                 style = MaterialTheme.typography.bodyMedium,
                                 overflow = TextOverflow.Ellipsis,
                                 maxLines = 3,

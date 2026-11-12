@@ -52,6 +52,10 @@ class SwitchSeerrViewModel
                         _state.update { it.copy(loading = LoadingState.Success) }
                     }
                 }
+            } else {
+                // Without the plugin there is nothing to fetch. Leaving the state on Loading
+                // showed an endless spinner on the add-Seerr-server page.
+                _state.update { it.copy(loading = LoadingState.Success) }
             }
         }
 

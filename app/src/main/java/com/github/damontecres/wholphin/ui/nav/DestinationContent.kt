@@ -42,6 +42,7 @@ import com.github.damontecres.wholphin.ui.detail.series.SeriesOverview
 import com.github.damontecres.wholphin.ui.discover.DiscoverPage
 import com.github.damontecres.wholphin.ui.discover.DiscoverRequestGrid
 import com.github.damontecres.wholphin.ui.main.HomePage
+import com.github.damontecres.wholphin.ui.main.TonightPage
 import com.github.damontecres.wholphin.ui.main.settings.HomeSettingsPage
 import com.github.damontecres.wholphin.ui.playback.PlayExternalPage
 import com.github.damontecres.wholphin.ui.playback.PlaybackPage
@@ -71,6 +72,13 @@ fun DestinationContent(
     when (destination) {
         is Destination.Home -> {
             HomePage(
+                preferences = preferences,
+                modifier = modifier,
+            )
+        }
+
+        Destination.Tonight -> {
+            TonightPage(
                 preferences = preferences,
                 modifier = modifier,
             )

@@ -82,6 +82,9 @@ import com.github.damontecres.wholphin.ui.discover.DiscoverRowData
 import com.github.damontecres.wholphin.ui.letNotEmpty
 import com.github.damontecres.wholphin.ui.nav.Destination
 import com.github.damontecres.wholphin.ui.rememberInt
+import com.github.damontecres.wholphin.ui.theme.GlassPanel
+import com.github.damontecres.wholphin.ui.theme.GlassTokens
+import com.github.damontecres.wholphin.ui.theme.LocalLiquidGlass
 import com.github.damontecres.wholphin.ui.util.ResStringProvider
 import com.github.damontecres.wholphin.util.DataLoadingState
 import com.github.damontecres.wholphin.util.DiscoverRequestType
@@ -372,7 +375,9 @@ fun SeriesDetailsContent(
                 modifier = Modifier,
             ) {
                 item {
-                    SeriesDetailsHeader(
+                    val glass = LocalLiquidGlass.current
+                    val headerContent: @Composable () -> Unit = {
+                        SeriesDetailsHeader(
                         series = series,
                         showLogo = preferences.appPreferences.interfacePreferences.showLogos,
                         overviewOnClick = overviewOnClick,
@@ -381,7 +386,10 @@ fun SeriesDetailsContent(
                             Modifier
                                 .fillMaxWidth()
                                 .bringIntoViewRequester(bringIntoViewRequester)
-                                .padding(top = HeaderUtils.topPadding, bottom = 16.dp),
+                                .padding(
+                                    top = if (glass) 0.dp else HeaderUtils.topPadding,
+                                    bottom = 16.dp,
+                                ),
                     )
                     Row(
                         horizontalArrangement = Arrangement.spacedBy(16.dp),
@@ -504,6 +512,30 @@ fun SeriesDetailsContent(
                                     },
                             )
                         }
+                    }
+                    }
+                    if (glass) {
+                        // Same material as the home hero and the movie page: the series copy
+                        // lives on one pane of clear glass, not on bare artwork.
+                        Box(
+                            modifier =
+                                Modifier
+                                    .fillMaxWidth()
+                                    .padding(horizontal = GlassTokens.screenInset, vertical = 4.dp),
+                        ) {
+                            GlassPanel(
+                                modifier = Modifier.fillMaxWidth(0.66f),
+                                scrim = 1f,
+                            ) {
+                                Column(
+                                    modifier = Modifier.padding(horizontal = 20.dp, vertical = 18.dp),
+                                ) {
+                                    headerContent()
+                                }
+                            }
+                        }
+                    } else {
+                        headerContent()
                     }
                 }
                 item {
@@ -677,6 +709,9 @@ fun SeriesDetailsHeader(
                 series.ui.quickDetails,
                 null,
                 Modifier.padding(start = HeaderUtils.startPadding),
+                // Inside the 60%-wide pane the Row variant measures the last rating past the
+                // rounded corner; one line ellipsizes where the sentence actually ends.
+                oneLine = LocalLiquidGlass.current,
             )
             dto.studios?.let {
                 val studios = remember { series.studioNames }

@@ -37,6 +37,11 @@ fun OverviewText(
     enabled: Boolean = true,
 ) {
     val context = LocalContext.current
+    // Half the library's descriptions are several paragraphs separated by blank lines. Those
+    // breaks count against maxLines, and when the limit lands on one Compose paints the overflow
+    // ellipsis alone on the next line. A preview is one block of copy, so collapse the breaks;
+    // the full description still opens from the click.
+    val preview = remember(overview) { overview.replace(Regex("\\s+"), " ").trim() }
     val isFocused = interactionSource.collectIsFocusedAsState().value
     val bgColor =
         if (isFocused) {
@@ -59,7 +64,7 @@ fun OverviewText(
                 },
     ) {
         Text(
-            text = overview,
+            text = preview,
             style = MaterialTheme.typography.bodyMedium,
             color = MaterialTheme.colorScheme.onSurface,
             maxLines = maxLines,

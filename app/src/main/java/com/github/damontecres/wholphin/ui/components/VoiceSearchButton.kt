@@ -42,6 +42,7 @@ import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.semantics.contentDescription
 import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.text.style.TextAlign
+import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import androidx.compose.ui.window.Dialog
@@ -54,6 +55,7 @@ import androidx.tv.material3.Text
 import androidx.tv.material3.surfaceColorAtElevation
 import com.github.damontecres.wholphin.R
 import com.github.damontecres.wholphin.ui.FontAwesome
+import com.github.damontecres.wholphin.ui.theme.GlassTokens
 import kotlinx.coroutines.delay
 
 private const val ERROR_AUTO_DISMISS_DELAY_MS = 3000L
@@ -85,6 +87,8 @@ fun VoiceSearchButton(
     onSpeechResult: (String) -> Unit,
     voiceInputManager: VoiceInputManager?,
     modifier: Modifier = Modifier,
+    size: Dp = MinButtonSize,
+    glass: Boolean = false,
 ) {
     if (voiceInputManager == null || !voiceInputManager.isAvailable) return
 
@@ -159,12 +163,13 @@ fun VoiceSearchButton(
         },
         modifier =
             modifier.requiredSizeIn(
-                minWidth = MinButtonSize,
-                minHeight = MinButtonSize,
-                maxWidth = MinButtonSize,
-                maxHeight = MinButtonSize,
+                minWidth = size,
+                minHeight = size,
+                maxWidth = size,
+                maxHeight = size,
             ),
         contentPadding = PaddingValues(0.dp),
+        glass = glass,
     ) {
         Box(
             modifier = Modifier.fillMaxSize(),
@@ -313,8 +318,10 @@ private fun VoiceSearchOverlay(
                     .fillMaxWidth(0.85f)
                     .wrapContentHeight()
                     .padding(vertical = 48.dp)
-                    .clip(MaterialTheme.shapes.large)
-                    .background(MaterialTheme.colorScheme.surfaceColorAtElevation(3.dp)),
+                    // The voice sheet is a dialog like any other: in glass mode it is a pane of
+                    // the material (and on the classic UI the same call is the elevated
+                    // surface), so a sheet this large never reads as a flat slab.
+                    .glassDialogSurface(shape = GlassTokens.panelShape),
             contentAlignment = Alignment.Center,
         ) {
             Row(

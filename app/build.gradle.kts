@@ -42,9 +42,13 @@ val isBuildingBundle =
         gradle.startParameter.taskNames.any { it.lowercase().contains("bundle") }
     }
 
-val gitTags =
+// Commit count, not the number of tags. A fork does not carry every upstream tag (pushing them
+// all would also fire the release workflow once per tag), so a tag count is not reproducible
+// between a developer checkout and CI. The commit count is the same in both, and it only ever
+// grows, which is exactly what Android's versionCode needs.
+val gitCommitCount =
     providers
-        .exec { commandLine("git", "tag", "--list", "v*", "p*") }
+        .exec { commandLine("git", "rev-list", "--count", "HEAD") }
         .standardOutput.asText
         .get()
 
@@ -75,7 +79,7 @@ configure<ApplicationExtension> {
         applicationId = "com.github.damontecres.wholphin"
         minSdk = libs.versions.minSdk.getInt()
         targetSdk = libs.versions.targetSdk.getInt()
-        versionCode = gitTags.trim().lines().size
+        versionCode = gitCommitCount.trim().toInt()
         versionName = gitDescribe.trim().removePrefix("v").ifBlank { "0.0.0" }
         testInstrumentationRunner = "com.github.damontecres.wholphin.test.WholphinTestRunner"
 
@@ -297,6 +301,7 @@ dependencies {
     implementation(libs.androidx.compose.runtime)
     implementation(libs.androidx.tv.foundation)
     implementation(libs.androidx.tv.material)
+    implementation(libs.backdrop)
     implementation(libs.androidx.lifecycle.runtime.ktx)
     implementation(libs.androidx.activity.compose)
     implementation(libs.androidx.datastore)

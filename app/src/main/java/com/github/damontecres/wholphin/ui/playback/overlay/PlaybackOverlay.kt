@@ -49,6 +49,7 @@ import androidx.compose.ui.unit.dp
 import androidx.media3.common.Player
 import coil3.compose.AsyncImage
 import com.github.damontecres.wholphin.data.model.BaseItem
+import com.github.damontecres.wholphin.data.model.WatchParty
 import com.github.damontecres.wholphin.data.model.Chapter
 import com.github.damontecres.wholphin.data.model.PlaylistItem
 import com.github.damontecres.wholphin.ui.AppColors
@@ -90,10 +91,14 @@ fun PlaybackOverlay(
     analyticsState: AnalyticsState,
     queue: List<PlaylistItem>,
     modifier: Modifier = Modifier,
+    sleepTimerRemainingSeconds: Int? = null,
+    onSleepTimerClick: () -> Unit = {},
     trickplayInfo: TrickplayInfo? = null,
     trickplayUrlFor: (Int) -> String? = { null },
     onClickPlaylist: (BaseItem) -> Unit = {},
     seekBarInteractionSource: MutableInteractionSource = remember { MutableInteractionSource() },
+    watchParty: WatchParty? = null,
+    onWatchPartyClick: () -> Unit = {},
 ) {
     val seekBarFocused by seekBarInteractionSource.collectIsFocusedAsState()
     // Will be used for preview/trick play images
@@ -205,6 +210,8 @@ fun PlaybackOverlay(
                             seekProgressMs = it
                         },
                         currentSegment = currentSegment,
+                        sleepTimerRemainingSeconds = sleepTimerRemainingSeconds,
+                        onSleepTimerClick = onSleepTimerClick,
                         onChangeState = onChangeState,
                         modifier =
                             Modifier
@@ -213,6 +220,8 @@ fun PlaybackOverlay(
                                     controllerHeight = with(density) { it.size.height.toDp() }
                                 },
                         seekBarInteractionSource = seekBarInteractionSource,
+                        watchParty = watchParty,
+                        onWatchPartyClick = onWatchPartyClick,
                     )
                 }
 

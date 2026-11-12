@@ -26,6 +26,7 @@ import com.github.damontecres.wholphin.services.BackdropService
 import com.github.damontecres.wholphin.services.RememberedTabService
 import com.github.damontecres.wholphin.services.UserPreferencesService
 import com.github.damontecres.wholphin.ui.launchIO
+import com.github.damontecres.wholphin.ui.theme.LocalLiquidGlass
 import com.github.damontecres.wholphin.ui.util.ResStringProvider
 import com.github.damontecres.wholphin.ui.util.StringProvider
 import dagger.assisted.Assisted
@@ -153,9 +154,13 @@ fun TabbedPage(
     showTabs: Boolean = true,
     tabContent: @Composable (Int, TabDetails) -> Unit,
 ) {
+    // The clock reserves 184dp on the classic drawer layout because it floats over the page's
+    // top-right. In glass mode the clock lives in the top bar, above this content entirely, so
+    // the reservation only made a long tab row start scrolling early.
+    val glass = LocalLiquidGlass.current
     val endPadding =
-        remember(isShowClock) {
-            if (isShowClock) {
+        remember(isShowClock, glass) {
+            if (isShowClock && !glass) {
                 184.dp
             } else {
                 0.dp
@@ -198,9 +203,13 @@ fun <T> KeyedTabbedPage(
     showTabs: Boolean = true,
     tabContent: @Composable (T, TabDetails) -> Unit,
 ) {
+    // The clock reserves 184dp on the classic drawer layout because it floats over the page's
+    // top-right. In glass mode the clock lives in the top bar, above this content entirely, so
+    // the reservation only made a long tab row start scrolling early.
+    val glass = LocalLiquidGlass.current
     val endPadding =
-        remember(isShowClock) {
-            if (isShowClock) {
+        remember(isShowClock, glass) {
+            if (isShowClock && !glass) {
                 184.dp
             } else {
                 0.dp

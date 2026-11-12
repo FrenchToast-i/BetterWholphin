@@ -2,6 +2,7 @@ package com.github.damontecres.wholphin.ui.detail
 
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
@@ -28,6 +29,8 @@ import com.github.damontecres.wholphin.ui.components.TabbedPage
 import com.github.damontecres.wholphin.ui.components.ViewOptions
 import com.github.damontecres.wholphin.ui.data.VideoSortOptions
 import com.github.damontecres.wholphin.ui.detail.livetv.DvrSchedule
+import com.github.damontecres.wholphin.ui.detail.livetv.LiveTvChannelsTab
+import com.github.damontecres.wholphin.ui.detail.livetv.LiveTvSportsTab
 import com.github.damontecres.wholphin.ui.detail.livetv.TvGuideGrid
 import com.github.damontecres.wholphin.ui.launchIO
 import com.github.damontecres.wholphin.ui.nav.Destination
@@ -108,6 +111,10 @@ fun CollectionFolderLiveTv(
                 remember {
                     listOf(
                         TabDetails(R.string.tv_guide),
+                        // A tuner can arrive before its guide does. Without these two, a fresh
+                        // Live TV page is 48 hours of "No data" with nothing in it to press.
+                        TabDetails(R.string.live_tv_channels),
+                        TabDetails(R.string.sports),
                         TabDetails(R.string.tv_dvr_schedule),
                     ) +
                         st.data.map {
@@ -121,20 +128,18 @@ fun CollectionFolderLiveTv(
                     }
                 }
 
-            var showHeader by rememberSaveable { mutableStateOf(true) }
+            // The strip stays put on every tab. It used to hide itself as the guide scrolled,
+            // which left a viewer deep in a schedule with no way to reach Channels or Sports
+            // except Back — and those two are the whole point of a sports tuner.
             TabbedPage(
                 itemId = destination.itemId.toString(),
                 tabs = tabs,
                 modifier = modifier,
-                showTabs = showHeader,
             ) { tabIndex, tabDetails ->
                 when (tabIndex) {
                     0 -> {
                         TvGuideGrid(
                             preferences = preferences,
-                            onRowPosition = {
-                                showHeader = it <= 0
-                            },
                             Modifier
                                 .fillMaxSize()
                                 .focusRequester(tabDetails.contentFocusRequester),
@@ -142,6 +147,35 @@ fun CollectionFolderLiveTv(
                     }
 
                     1 -> {
+                        LiveTvChannelsTab(
+                            onClickChannel = { channel ->
+                                viewModel.navigationManager.navigateTo(
+                                    Destination.Playback(itemId = channel.id, positionMs = 0L),
+                                )
+                            },
+                            modifier = Modifier.fillMaxSize(),
+                            focusRequester = tabDetails.contentFocusRequester,
+                        )
+                    }
+
+                    2 -> {
+                        LiveTvSportsTab(
+                            onClickProgram = { program ->
+                                viewModel.navigationManager.navigateTo(
+                                    Destination.Playback(itemId = program.channelId, positionMs = 0L),
+                                )
+                            },
+                            onClickChannel = { channel ->
+                                viewModel.navigationManager.navigateTo(
+                                    Destination.Playback(itemId = channel.id, positionMs = 0L),
+                                )
+                            },
+                            modifier = Modifier.fillMaxSize(),
+                            focusRequester = tabDetails.contentFocusRequester,
+                        )
+                    }
+
+                    3 -> {
                         DvrSchedule(
                             requestFocusAfterLoading = true,
                             focusRequesterOnEmpty = tabDetails.tabFocusRequester,
@@ -153,7 +187,7 @@ fun CollectionFolderLiveTv(
                     }
 
                     else -> {
-                        val folderIndex = tabIndex - 2
+                        val folderIndex = tabIndex - 4
                         if (folderIndex in st.data.indices) {
                             CollectionFolderView(
                                 preferences = preferences,
@@ -164,9 +198,7 @@ fun CollectionFolderLiveTv(
                                 recursive = false,
                                 sortOptions = VideoSortOptions,
                                 modifier = Modifier.focusRequester(tabDetails.contentFocusRequester),
-                                positionCallback = { columns, position ->
-                                    showHeader = position < columns
-                                },
+                                positionCallback = { _, _ -> },
                                 playEnabled = false,
                                 defaultViewOptions = ViewOptions(),
                                 focusRequesterOnEmpty = tabDetails.tabFocusRequester,

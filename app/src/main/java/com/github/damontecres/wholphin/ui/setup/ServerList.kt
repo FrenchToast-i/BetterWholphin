@@ -35,6 +35,9 @@ import com.github.damontecres.wholphin.data.model.JellyfinServer
 import com.github.damontecres.wholphin.ui.AppColors
 import com.github.damontecres.wholphin.ui.Cards
 import com.github.damontecres.wholphin.ui.components.CircularProgress
+import com.github.damontecres.wholphin.ui.theme.GlassTokens
+import com.github.damontecres.wholphin.ui.theme.GlassType
+import com.github.damontecres.wholphin.ui.theme.LocalLiquidGlass
 import org.jellyfin.sdk.model.api.PublicSystemInfo
 import java.util.UUID
 
@@ -107,12 +110,13 @@ fun ServerIconCard(
     allowDelete: Boolean = false,
 ) {
     val interactionSource = remember { MutableInteractionSource() }
+    val glass = LocalLiquidGlass.current
 
     // Generate unique color for this server
     val serverColor = rememberIdColor(server.id)
 
     // Card dimensions - circular card
-    val cardSize = Cards.serverUserCircle
+    val cardSize = if (glass) GlassTokens.profileSize else Cards.serverUserCircle
 
     val displayText =
         remember(server) {
@@ -125,7 +129,7 @@ fun ServerIconCard(
     Column(
         modifier = modifier,
         horizontalAlignment = Alignment.CenterHorizontally,
-        verticalArrangement = Arrangement.spacedBy(24.dp),
+        verticalArrangement = Arrangement.spacedBy(if (glass) GlassTokens.profileLabelGap else 24.dp),
     ) {
         // Circular card with colored background
         Surface(
@@ -138,30 +142,32 @@ fun ServerIconCard(
                 ClickableSurfaceDefaults.colors(
                     containerColor =
                         if (isCurrentServer) {
-                            serverColor.copy(alpha = 0.7f)
+                            serverColor.copy(alpha = if (glass) 0.46f else 0.7f)
                         } else {
-                            serverColor.copy(alpha = 0.5f)
+                            serverColor.copy(alpha = if (glass) 0.34f else 0.5f)
                         },
                     focusedContainerColor =
                         if (isCurrentServer) {
-                            serverColor.copy(alpha = 0.9f)
+                            serverColor.copy(alpha = if (glass) 0.66f else 0.9f)
                         } else {
-                            serverColor.copy(alpha = 0.7f)
+                            serverColor.copy(alpha = if (glass) 0.56f else 0.7f)
                         },
                 ),
             border =
                 ClickableSurfaceDefaults.border(
+                    // A profile picture on glass is a tinted disc, not a pane; the focus ring is
+                    // the one place a drawn outline is the right signal.
                     focusedBorder =
                         Border(
                             border =
                                 BorderStroke(
-                                    width = 3.dp,
-                                    color = MaterialTheme.colorScheme.onSurface,
+                                    width = if (glass) 2.5.dp else 3.dp,
+                                    color = if (glass) Color.White else MaterialTheme.colorScheme.onSurface,
                                 ),
                             shape = CircleShape,
                         ),
                 ),
-            scale = ClickableSurfaceDefaults.scale(focusedScale = 1.2f),
+            scale = ClickableSurfaceDefaults.scale(focusedScale = if (glass) 1.10f else 1.2f),
         ) {
             Box(
                 modifier = Modifier.fillMaxSize(),
@@ -192,7 +198,7 @@ fun ServerIconCard(
                                     MaterialTheme.typography.titleLarge.copy(
                                         fontWeight = FontWeight.Bold,
                                     ),
-                                color = MaterialTheme.colorScheme.onSurface,
+                                color = if (glass) Color.White else MaterialTheme.colorScheme.onSurface,
                                 textAlign = TextAlign.Center,
                             )
                         }
@@ -207,7 +213,7 @@ fun ServerIconCard(
                                 MaterialTheme.typography.displayLarge.copy(
                                     fontWeight = FontWeight.Bold,
                                 ),
-                            color = MaterialTheme.colorScheme.onSurface,
+                            color = if (glass) Color.White else MaterialTheme.colorScheme.onSurface,
                             textAlign = TextAlign.Center,
                         )
                     }
@@ -224,8 +230,8 @@ fun ServerIconCard(
         // Server name below the card
         Text(
             text = server.name?.ifBlank { null } ?: server.url,
-            style = MaterialTheme.typography.bodyLarge,
-            color = MaterialTheme.colorScheme.onSurface,
+            style = if (glass) GlassType.tab else MaterialTheme.typography.bodyLarge,
+            color = if (glass) Color.White else MaterialTheme.colorScheme.onSurface,
             fontWeight = FontWeight.Bold,
             textAlign = TextAlign.Center,
             maxLines = 2,
@@ -247,17 +253,18 @@ fun AddServerCard(
     modifier: Modifier = Modifier,
 ) {
     val interactionSource = remember { MutableInteractionSource() }
+    val glass = LocalLiquidGlass.current
 
     // Use a neutral gray color for the add server card
-    val addServerColor = MaterialTheme.colorScheme.surfaceVariant
+    val addServerColor = if (glass) Color.White.copy(alpha = 0.12f) else MaterialTheme.colorScheme.surfaceVariant
 
     // Card dimensions - circular card (same as server cards)
-    val cardSize = Cards.height2x3 * 0.75f // ~120dp
+    val cardSize = if (glass) GlassTokens.profileSize else Cards.height2x3 * 0.75f
 
     Column(
         modifier = modifier,
         horizontalAlignment = Alignment.CenterHorizontally,
-        verticalArrangement = Arrangement.spacedBy(24.dp),
+        verticalArrangement = Arrangement.spacedBy(if (glass) GlassTokens.profileLabelGap else 24.dp),
     ) {
         // Circular card with colored background
         Surface(
@@ -270,8 +277,10 @@ fun AddServerCard(
             shape = ClickableSurfaceDefaults.shape(shape = CircleShape),
             colors =
                 ClickableSurfaceDefaults.colors(
-                    containerColor = addServerColor.copy(alpha = 0.4f),
-                    focusedContainerColor = addServerColor.copy(alpha = 0.6f),
+                    containerColor = if (glass) addServerColor else addServerColor.copy(alpha = 0.4f),
+                    contentColor = if (glass) Color.White else MaterialTheme.colorScheme.onSurface,
+                    focusedContainerColor = if (glass) Color.White else addServerColor.copy(alpha = 0.6f),
+                    focusedContentColor = if (glass) Color.Black else MaterialTheme.colorScheme.onSurface,
                 ),
             border =
                 ClickableSurfaceDefaults.border(
@@ -279,13 +288,13 @@ fun AddServerCard(
                         Border(
                             border =
                                 BorderStroke(
-                                    width = 3.dp,
-                                    color = MaterialTheme.colorScheme.onSurface,
+                                    width = if (glass) 2.dp else 3.dp,
+                                    color = if (glass) Color.Black.copy(alpha = 0.35f) else MaterialTheme.colorScheme.onSurface,
                                 ),
                             shape = CircleShape,
                         ),
                 ),
-            scale = ClickableSurfaceDefaults.scale(focusedScale = 1.2f),
+            scale = ClickableSurfaceDefaults.scale(focusedScale = if (glass) 1.10f else 1.2f),
         ) {
             Box(
                 modifier = Modifier.fillMaxSize(),
@@ -294,7 +303,7 @@ fun AddServerCard(
                 Icon(
                     imageVector = Icons.Default.Add,
                     contentDescription = stringResource(R.string.add_server),
-                    tint = MaterialTheme.colorScheme.onSurface,
+                    tint = Color.Unspecified,
                     modifier = Modifier.size(cardSize * 0.4f), // Size of the + icon
                 )
             }
@@ -304,10 +313,12 @@ fun AddServerCard(
         Text(
             text = stringResource(R.string.add_server),
             style =
-                MaterialTheme.typography.bodyLarge.copy(
-                    fontWeight = FontWeight.Bold,
-                ),
-            color = MaterialTheme.colorScheme.onSurface,
+                if (glass) {
+                    GlassType.tab
+                } else {
+                    MaterialTheme.typography.bodyLarge.copy(fontWeight = FontWeight.Bold)
+                },
+            color = if (glass) Color.White else MaterialTheme.colorScheme.onSurface,
             textAlign = TextAlign.Center,
             maxLines = 2,
             overflow = TextOverflow.Ellipsis,

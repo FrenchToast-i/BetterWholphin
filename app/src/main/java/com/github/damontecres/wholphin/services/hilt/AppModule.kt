@@ -8,6 +8,7 @@ import com.github.damontecres.wholphin.data.MostRecentServerProvider
 import com.github.damontecres.wholphin.data.MostRecentServerSharedPreferences
 import com.github.damontecres.wholphin.data.ServerRepository
 import com.github.damontecres.wholphin.services.SeerrApi
+import com.github.damontecres.wholphin.services.WatchPartySocketTap
 import com.github.damontecres.wholphin.util.CoroutineContextApiClientFactory
 import com.github.damontecres.wholphin.util.WholphinDispatchers
 import dagger.Module
@@ -132,7 +133,8 @@ object AppModule {
     @Singleton
     fun okHttpFactory(
         @StandardOkHttpClient okHttpClient: OkHttpClient,
-    ) = CoroutineContextApiClientFactory(OkHttpFactory(okHttpClient))
+        watchPartySocketTap: WatchPartySocketTap,
+    ) = CoroutineContextApiClientFactory(OkHttpFactory(okHttpClient), watchPartySocketTap)
 
     @Provides
     @Singleton
