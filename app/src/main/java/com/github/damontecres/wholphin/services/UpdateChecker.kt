@@ -10,6 +10,7 @@ import android.net.Uri
 import android.os.Build
 import android.os.Environment
 import android.provider.MediaStore
+import android.provider.Settings
 import android.widget.Toast
 import androidx.core.content.ContextCompat
 import androidx.core.content.FileProvider
@@ -44,7 +45,6 @@ import java.util.Date
 import javax.inject.Inject
 import javax.inject.Singleton
 import kotlin.time.Duration.Companion.hours
-import kotlin.time.Duration.Companion.milliseconds
 
 /**
  * Checks if an app update is available
@@ -65,6 +65,21 @@ class UpdateChecker
             private val NOTE_REGEX = Regex("<!-- app-note:(.+) -->")
 
             val ACTIVE = BuildConfig.UPDATING_ENABLED
+
+            /**
+             * Whether an automatic update check is due. A clock that moved backwards also
+             * counts as due, otherwise a corrected clock can suppress checks until it catches
+             * up again.
+             */
+            internal fun isUpdateCheckDue(
+                lastCheckMillis: Long,
+                nowMillis: Long,
+                thresholdHours: Long,
+            ): Boolean {
+                if (lastCheckMillis <= 0L || nowMillis < lastCheckMillis) return true
+                val thresholdMillis = thresholdHours.coerceAtLeast(0L) * 60L * 60L * 1000L
+                return nowMillis - lastCheckMillis >= thresholdMillis
+            }
         }
 
         /**
@@ -87,26 +102,32 @@ class UpdateChecker
                     context.getString(R.string.pref_key_update_last_check),
                     0,
                 )
-            val timeSince = (now.time - lastUpdateCheck).milliseconds
-            Timber.v("Last successful update check was $timeSince ago")
+            // This runs from onStart, so without a throttle it asked GitHub on every launch.
+            // The unauthenticated API allows 60 requests an hour; a viewer flicking between
+            // the launcher and the app can exhaust that and then see no updates at all. A
+            // manual check always runs.
+            if (!showNegativeToast &&
+                !isUpdateCheckDue(lastUpdateCheck, now.time, lastUpdateCheckThreshold.inWholeHours)
+            ) {
+                Timber.v("Skipping update check, last was ${now.time - lastUpdateCheck}ms ago")
+                return
+            }
             val installedVersion = getInstalledVersion()
             val latestRelease = getLatestRelease(updateUrl)
-            if (latestRelease != null && latestRelease.version.isGreaterThan(installedVersion)) {
-                Timber.v("Update available $installedVersion => ${latestRelease.version}")
+            if (latestRelease != null) {
+                // Record the completed check, not just a positive result. A request that found
+                // nothing used to leave the timestamp at zero, so every launch asked again.
                 pref.edit {
                     putLong(context.getString(R.string.pref_key_update_last_check), now.time)
                 }
-                if (lastUpdateCheckThreshold >= timeSince) {
-                    Timber.i(
-                        "Skipping update notification, threshold is $lastUpdateCheckThreshold",
-                    )
-                } else {
-                    showToast(
-                        context,
-                        "Update available: $installedVersion => ${latestRelease.version}!",
-                        Toast.LENGTH_LONG,
-                    )
-                }
+            }
+            if (latestRelease != null && latestRelease.version.isGreaterThan(installedVersion)) {
+                Timber.v("Update available $installedVersion => ${latestRelease.version}")
+                showToast(
+                    context,
+                    "Update available: $installedVersion => ${latestRelease.version}!",
+                    Toast.LENGTH_LONG,
+                )
             } else {
                 Timber.v("No update available for $installedVersion")
                 if (showNegativeToast) {
@@ -125,6 +146,36 @@ class UpdateChecker
         fun getInstalledVersion(): Version {
             val pkgInfo = context.packageManager.getPackageInfo(context.packageName, 0)
             return Version.fromString(pkgInfo.versionName!!)
+        }
+
+        /**
+         * Whether Android will let this app hand an APK to the package installer. API 26 gates
+         * that behind the per-app "Install unknown apps" switch, which the installer itself
+         * only reports after an APK has already been downloaded.
+         */
+        fun canInstallPackages(): Boolean =
+            Build.VERSION.SDK_INT < Build.VERSION_CODES.O ||
+                context.packageManager.canRequestPackageInstalls()
+
+        /**
+         * Open the per-app "Install unknown apps" screen, which is where a viewer allows the
+         * in-app updater.
+         */
+        fun openInstallPermissionSettings() {
+            val intent =
+                Intent(Settings.ACTION_MANAGE_UNKNOWN_APP_SOURCES)
+                    .setData(Uri.parse("package:${context.packageName}"))
+                    .addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
+            try {
+                context.startActivity(intent)
+            } catch (ex: Exception) {
+                Timber.w(ex, "Could not open install permission settings")
+                Toast.makeText(
+                    context,
+                    "Allow app installs for ${context.getString(R.string.app_name)} in system settings",
+                    Toast.LENGTH_LONG,
+                ).show()
+            }
         }
 
         suspend fun getRelease(version: Version): Release? {

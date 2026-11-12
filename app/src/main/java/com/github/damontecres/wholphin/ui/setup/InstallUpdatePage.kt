@@ -39,7 +39,9 @@ import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import androidx.hilt.lifecycle.viewmodel.compose.hiltViewModel
+import androidx.lifecycle.Lifecycle
 import androidx.lifecycle.ViewModel
+import androidx.lifecycle.compose.LifecycleEventEffect
 import androidx.lifecycle.viewModelScope
 import androidx.tv.material3.MaterialTheme
 import androidx.tv.material3.Text
@@ -175,6 +177,12 @@ fun InstallUpdatePage(
 
     val state by viewModel.state.collectAsState()
     var permissions by remember { mutableStateOf(viewModel.updater.hasPermissions()) }
+    var canInstallPackages by remember { mutableStateOf(viewModel.updater.canInstallPackages()) }
+    // The viewer leaves for the system "Install unknown apps" screen and comes back, so the
+    // answer has to be re-read or the page keeps insisting the install is blocked.
+    LifecycleEventEffect(Lifecycle.Event.ON_RESUME) {
+        canInstallPackages = viewModel.updater.canInstallPackages()
+    }
     val launcher =
         rememberLauncherForActivityResult(
             ActivityResultContracts.RequestPermission(),
@@ -203,12 +211,14 @@ fun InstallUpdatePage(
                     currentVersion = viewModel.currentVersion,
                     release = release,
                     onInstallRelease = {
-                        if (!permissions) {
-                            launcher.launch(Manifest.permission.WRITE_EXTERNAL_STORAGE)
-                        } else {
-                            viewModel.installRelease(release)
+                        when {
+                            !permissions ->
+                                launcher.launch(Manifest.permission.WRITE_EXTERNAL_STORAGE)
+                            !canInstallPackages -> viewModel.updater.openInstallPermissionSettings()
+                            else -> viewModel.installRelease(release)
                         }
                     },
+                    needsInstallPermission = !canInstallPackages,
                     onCancel = {
                         viewModel.navigationManager.goBack()
                     },
@@ -240,6 +250,7 @@ fun InstallUpdatePageContent(
     onInstallRelease: () -> Unit,
     onCancel: () -> Unit,
     modifier: Modifier = Modifier,
+    needsInstallPermission: Boolean = false,
 ) {
     Row(
         horizontalArrangement = Arrangement.spacedBy(16.dp),
@@ -329,8 +340,20 @@ fun InstallUpdatePageContent(
                 style = MaterialTheme.typography.titleLarge,
                 color = if (glass) Color.White else MaterialTheme.colorScheme.onSurface,
             )
+            if (needsInstallPermission) {
+                Text(
+                    text = stringResource(R.string.update_install_permission_needed),
+                    style = MaterialTheme.typography.bodyMedium,
+                    color = if (glass) Color(0xFFFFC46B) else MaterialTheme.colorScheme.error,
+                )
+            }
             TextButton(
-                stringRes = R.string.download_and_update,
+                stringRes =
+                    if (needsInstallPermission) {
+                        R.string.allow_app_installs
+                    } else {
+                        R.string.download_and_update
+                    },
                 onClick = onInstallRelease,
             )
             TextButton(

@@ -441,10 +441,11 @@ fun PreferencesContent(
                                         title =
                                             if (release != null && updateAvailable) {
                                                 stringResource(R.string.install_update)
-                                            } else if (!preferences.autoCheckForUpdates && release == null) {
-                                                stringResource(R.string.check_for_updates)
                                             } else {
-                                                stringResource(R.string.no_update_available)
+                                                // Tapping this row re-checks and can open the
+                                                // updater, so "No update available" read as a
+                                                // disabled row rather than the manual check it is.
+                                                stringResource(R.string.check_for_updates)
                                             },
                                         onClick = {
                                             if (movementSounds) playOnClickSound(context)

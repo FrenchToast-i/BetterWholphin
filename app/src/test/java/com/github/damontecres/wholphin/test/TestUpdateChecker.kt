@@ -1,5 +1,6 @@
 package com.github.damontecres.wholphin.test
 
+import com.github.damontecres.wholphin.services.UpdateChecker
 import com.github.damontecres.wholphin.services.getDownloadUrl
 import kotlinx.serialization.json.Json
 import kotlinx.serialization.json.JsonArray
@@ -29,6 +30,29 @@ class TestUpdateChecker {
     @Before
     fun setup() {
         releaseJson = read("release_develop.json")
+    }
+
+    @Test
+    fun `Update check is due when never checked`() {
+        Assert.assertTrue(UpdateChecker.isUpdateCheckDue(0L, 1_000L, 12))
+    }
+
+    @Test
+    fun `Update check is not due within the threshold`() {
+        val now = 1_000_000_000L
+        Assert.assertFalse(UpdateChecker.isUpdateCheckDue(now - 11 * 3_600_000L, now, 12))
+    }
+
+    @Test
+    fun `Update check is due after the threshold`() {
+        val now = 1_000_000_000L
+        Assert.assertTrue(UpdateChecker.isUpdateCheckDue(now - 12 * 3_600_000L, now, 12))
+    }
+
+    @Test
+    fun `Update check is due when the clock moved backwards`() {
+        val now = 1_000_000_000L
+        Assert.assertTrue(UpdateChecker.isUpdateCheckDue(now + 60_000L, now, 12))
     }
 
     @Test
