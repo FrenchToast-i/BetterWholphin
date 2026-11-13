@@ -218,27 +218,51 @@ fun TvGuideGrid(
                         },
                         onFocusProgram = { focusedProgram = it },
                         onClickProgram = { index, program ->
-                            if (program.isFake) {
-                                val now = LocalDateTime.now()
-                                if (now.isAfter(program.start) && now.isBefore(program.end)) {
+                            val now = LocalDateTime.now()
+                            when {
+                                program.isFake -> {
+                                    if (now.isAfter(program.start) && now.isBefore(program.end)) {
+                                        viewModel.navigationManager.navigateTo(
+                                            Destination.Playback(
+                                                itemId = program.channelId,
+                                                positionMs = 0L,
+                                            ),
+                                        )
+                                    } else {
+                                        Toast
+                                            .makeText(
+                                                context,
+                                                "No guide data found!",
+                                                Toast.LENGTH_SHORT,
+                                            ).show()
+                                    }
+                                }
+                                // A programme that is on now is the thing the viewer pressed
+                                // OK for: tune it. Making the dialog the only path meant every
+                                // channel change was two presses through a sheet, which is the
+                                // wrong shape on a remote and worse on a tuner where every
+                                // channel is a live fixture. A future programme still opens the
+                                // sheet, because its channel is showing something else now.
+                                !program.start.isAfter(now) && now.isBefore(program.end) -> {
                                     viewModel.navigationManager.navigateTo(
                                         Destination.Playback(
                                             itemId = program.channelId,
                                             positionMs = 0L,
                                         ),
                                     )
-                                } else {
-                                    Toast
-                                        .makeText(
-                                            context,
-                                            "No guide data found!",
-                                            Toast.LENGTH_SHORT,
-                                        ).show()
                                 }
-                            } else {
-                                viewModel.fetchProgramForDialog(program.id)
-                                showItemDialog = index
+
+                                else -> {
+                                    viewModel.fetchProgramForDialog(program.id)
+                                    showItemDialog = index
+                                }
                             }
+                        },
+                        onLongClickProgram = { index, program ->
+                            // Hold for the sheet: details, record, series record. The quick path
+                            // is watching; the slow path is everything else.
+                            viewModel.fetchProgramForDialog(program.id)
+                            showItemDialog = index
                         },
                         focusRequester = focusRequester,
                         // The page keeps the artwork behind it in glass mode; the guide itself
@@ -372,6 +396,7 @@ fun TvGuideGridContent(
     guideTimes: List<LocalDateTime>,
     onClickChannel: (Int, TvChannel) -> Unit,
     onClickProgram: (Int, TvProgram) -> Unit,
+    onLongClickProgram: ((Int, TvProgram) -> Unit)? = null,
     onFocus: (RowColumn) -> Unit,
     onFocusProgram: (TvProgram) -> Unit,
     focusRequester: FocusRequester,
@@ -576,7 +601,10 @@ fun TvGuideGridContent(
                     onClick = {
                         onClickProgram.invoke(programIndex, program)
                     },
-                    onLongClick = {},
+                    onLongClick =
+                        onLongClickProgram?.let { longClick ->
+                            { longClick.invoke(programIndex, program) }
+                        },
                     modifier =
                         Modifier
                             .ifElse(

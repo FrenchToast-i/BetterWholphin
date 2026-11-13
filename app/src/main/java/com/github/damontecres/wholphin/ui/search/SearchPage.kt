@@ -17,6 +17,7 @@ import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.lazy.LazyColumn
+import androidx.compose.foundation.lazy.LazyRow
 import androidx.compose.foundation.lazy.itemsIndexed
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.DisposableEffect
@@ -417,6 +418,13 @@ fun SearchPage(
                     SearchCombinedResults(
                         result = state.combinedResults,
                         query = query,
+                        // Requests stay a shelf of their own, above the library grid.
+                        seerrResult =
+                            if (seerrActive && state.discoverEnabled) {
+                                state.seerrResults
+                            } else {
+                                SearchResult.NoQuery
+                            },
                         focusRequester = focusRequesters[COMBINED_ROW],
                         onClickItem = onClickItem,
                         onLongClickItem = { index, item ->
@@ -631,6 +639,13 @@ fun SearchCombinedResults(
     result: SearchResult,
     query: String = "",
     focusRequester: FocusRequester,
+    /**
+     * What Seerr has for the same query. It is drawn as its own shelf above the library grid,
+     * never merged into it: a title the household does not own is a request, and mixing the two
+     * kinds of result in one grid makes the viewer read every poster twice to work out which is
+     * which.
+     */
+    seerrResult: SearchResult = SearchResult.NoQuery,
     onClickItem: (Int, BaseItem) -> Unit,
     onLongClickItem: (Int, BaseItem) -> Unit,
     onPlayItem: (Int, BaseItem) -> Unit,
@@ -668,20 +683,39 @@ fun SearchCombinedResults(
                 // Combined mode is also where a TMDB bridge lands ("Search your library"),
                 // and those titles are mostly not owned: name the query so the empty state
                 // reads as an answer instead of a broken search.
-                SearchResultPlaceholder(
-                    title = stringResource(R.string.results),
-                    message =
-                        if (query.isNotBlank()) {
-                            stringResource(R.string.search_no_results_message, query)
-                        } else {
-                            stringResource(R.string.no_results)
-                        },
-                    modifier = modifier.padding(16.dp),
-                )
+                Column(modifier = modifier.fillMaxSize()) {
+                    SearchResultPlaceholder(
+                        title = stringResource(R.string.results),
+                        message =
+                            if (query.isNotBlank()) {
+                                stringResource(R.string.search_no_results_message, query)
+                            } else {
+                                stringResource(R.string.no_results)
+                            },
+                        modifier = Modifier.padding(16.dp),
+                    )
+                    // The library has nothing, but Seerr may be able to fetch it: keeping the
+                    // shelf here turns a dead end into a request instead of a sentence.
+                    SeerrSearchShelf(
+                        result = seerrResult,
+                        onClickDiscover = onClickDiscover,
+                        onFocusDiscoverItem = onFocusDiscoverItem,
+                        firstFocusRequester = remember { FocusRequester() },
+                    )
+                }
             } else {
+                val discoveryShelfFocus = remember { FocusRequester() }
                 SearchGrid(
                     items = result.items,
                     focusRequester = focusRequester,
+                    header = {
+                        SeerrSearchShelf(
+                            result = seerrResult,
+                            onClickDiscover = onClickDiscover,
+                            onFocusDiscoverItem = onFocusDiscoverItem,
+                            firstFocusRequester = discoveryShelfFocus,
+                        )
+                    },
                     onClickItem = onClickItem,
                     onLongClickItem = onLongClickItem,
                     onPlayItem = onPlayItem,
@@ -754,11 +788,13 @@ private fun <T : CardGridItem> SearchGrid(
     cardContent: @Composable (GridItemDetails<T>) -> Unit,
     positionCallback: (columns: Int, position: Int) -> Unit,
     modifier: Modifier = Modifier,
+    header: (@Composable () -> Unit)? = null,
 ) {
     Column(
         verticalArrangement = Arrangement.spacedBy(0.dp),
         modifier = modifier,
     ) {
+        header?.invoke()
         ItemRowTitle(stringResource(R.string.results))
 
         CardGrid(
@@ -780,6 +816,54 @@ private fun <T : CardGridItem> SearchGrid(
             modifier = Modifier.fillMaxSize(),
             cardContent = cardContent,
         )
+    }
+}
+
+/**
+ * The external half of a search: what Seerr could fetch if the viewer asked for it.
+ *
+ * A horizontal shelf rather than part of the result grid. It is allowed to be scrolled past —
+ * library results are the answer to "do I have this?", and the request shelf answers the next
+ * question without pretending to be part of the first.
+ */
+@Composable
+private fun SeerrSearchShelf(
+    result: SearchResult,
+    onClickDiscover: (Int, DiscoverItem) -> Unit,
+    onFocusDiscoverItem: (DiscoverItem) -> Unit,
+    firstFocusRequester: FocusRequester,
+) {
+    val items = (result as? SearchResult.SuccessSeerr)?.items.orEmpty()
+    if (items.isEmpty()) return
+    Column(
+        verticalArrangement = Arrangement.spacedBy(2.dp),
+        modifier = Modifier.fillMaxWidth(),
+    ) {
+        ItemRowTitle(stringResource(R.string.requests_and_discovery))
+        LazyRow(
+            horizontalArrangement = Arrangement.spacedBy(16.dp),
+            contentPadding = PaddingValues(vertical = 6.dp),
+            modifier = Modifier.fillMaxWidth().focusGroup(),
+        ) {
+            itemsIndexed(items, key = { _, item -> item.id }) { index, item ->
+                DiscoverItemCard(
+                    item = item,
+                    onClick = { onClickDiscover(index, item) },
+                    onLongClick = {},
+                    modifier =
+                        Modifier
+                            .then(
+                                if (index == 0) {
+                                    Modifier.focusRequester(firstFocusRequester)
+                                } else {
+                                    Modifier
+                                },
+                            ).onFocusChanged {
+                                if (it.isFocused) onFocusDiscoverItem(item)
+                            },
+                )
+            }
+        }
     }
 }
 

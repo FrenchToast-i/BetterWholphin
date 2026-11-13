@@ -74,20 +74,34 @@ class BackdropService
 
         /**
          * Update the backdrop to use the specified URL
+         *
+         * The artwork is swapped *first* and the palette is extracted afterwards. This used to
+         * null the image for the whole extraction (which is debounced by half a second), so
+         * moving the D-pad across a row blanked the frame between every card and the background
+         * appeared not to follow focus at all. A missing backdrop keeps the previous artwork:
+         * a live-TV channel or a person has no landscape image, and falling back to an empty
+         * frame is worse than leaving the last show on screen.
          */
         suspend fun submit(
             itemId: String,
             imageUrl: String?,
         ) = withContext(WholphinDispatchers.IO) {
-            if (backdropFlow.firstOrNull()?.imageUrl != imageUrl || imageUrl == null) {
-                _backdropFlow.update {
-                    it.copy(
-                        itemId = itemId,
-                        imageUrl = null,
-                    )
-                }
-                extractColors(itemId, imageUrl)
+            val current = backdropFlow.firstOrNull()
+            if (imageUrl == null) {
+                // Nothing to show for this item. Keep the frame it inherited; the palette still
+                // belongs to the last real artwork, which is what the panes were built against.
+                return@withContext
             }
+            if (current?.itemId == itemId && current.imageUrl == imageUrl) {
+                return@withContext
+            }
+            _backdropFlow.update {
+                it.copy(
+                    itemId = itemId,
+                    imageUrl = imageUrl,
+                )
+            }
+            extractColors(itemId, imageUrl)
         }
 
         /**

@@ -554,6 +554,36 @@
   transport: the row has the width, and a fourth right-hand button would have pushed the seek
   bar's own labels out of the deck. The clock glyph is lit (white) while a timer runs.
 
+## On air
+
+- The library as a handful of always-on channels, a tab under Tonight rather than a destination:
+  the glass bar already carries every library, and an evening page that cannot answer "just put
+  something on" only answers half of the question. The tab keeps it one press from the surface a
+  viewer opens when they do not know what to watch.
+- `OnAirPlanner` is the arithmetic and is pure (`OnAirPlannerTest`): each channel is a
+  deterministic playlist seeded by the week and laid end to end since Monday 00:00. Projecting
+  the loop onto `now` keeps a film continuous across midnight, makes "what's on" stable while the
+  page is open, and changes the programming each week. `schedule` uses a local positive modulo,
+  not `Math.floorMod(long, long)`: that overload is API 24 and the app still supports 23.
+- Channels are best-effort. Five queries run in parallel, a failed query costs one channel, and a
+  channel with fewer than four playable items is dropped rather than drawn as a stub. The Binge
+  pool keeps two episodes per series, otherwise the first two hundred episodes alphabetically
+  become one show's box set. Comfort is the favourites filter; Animation and Late Night are
+  genre queries and simply disappear on a library without them.
+- **Tune in joins the broadcast.** `Destination.Playback(itemId, positionMs = now - start)` is
+  what makes the feature real: the viewer lands mid-film rather than at the beginning, and the
+  hero's progress rule says where they are. There is no auto-advance yet — when the program ends
+  the player returns, and the next program is already airing when they come back.
+- The page ticks locally every 20 seconds and recomputes the schedule from the held playlists; it
+  never re-queries to move a progress bar. `OnAirViewModel` keeps a loaded set for fifteen
+  minutes, so moving between the two tabs is free.
+- `ChannelData.itemFor` matches the **entry** id, not `BaseItem.id`: the schedule is built from
+  entries, and a test that gives each entry its own id must still find its item. Matching
+  `item.id` drew a page of "Tuning the channel…" over a fully loaded library.
+- `OnAirContent` is the stateless body; `OnAirShotTest` renders it at 960×540 and writes
+  `/tmp/onair_shot.png`. It is the only way to judge the dense hero without a Jellyfin server, and
+  it is what caught the `itemFor` bug above.
+
 ## Live TV
 
 - The landing page is four tabs in this order: **Guide, Channels, Sports**, then DVR Schedule and
@@ -711,3 +741,77 @@
   play URL), the `ApiRequestPager` serializer fix for artist requests, the Seerr add-server
   endless-loading fix, and the 2026-11 translations. Dependency-only bumps (AGP, nav3, DataStore)
   are skipped while the fork is still on SDK 1.7.1.
+
+## Request ledger and local credentials
+
+- `docs/REQUESTS.md` is the product backlog. Every UI/UX request gets an ID and the exact wording,
+  then a status (⬜ / 🟡 / ✅ / ⏸) and a note saying what was built and how it was checked. Read it
+  before starting a new UI pass and update it in the same change as the work. Do not delete
+  finished entries; they are the record of what a previous pass decided and why.
+- `LOCAL-CREDENTIALS.md` holds the household's TMDB key, Seerr server/account and Jellyfin
+  server/account/API key. It is ignored by `.gitignore` **and** `.git/info/exclude` and must never
+  be committed, screenshotted, logged or pasted into a release. Deeper agent notes in this file
+  must likewise never contain a key.
+
+## Profiles (glass setup screen)
+
+- The picker is a single pane anchored to the **top-right**, profiles as rows beneath each other,
+  with the display title on the left. A centred sheet with a centred title had no hierarchy and
+  forced a four-profile household to scroll a horizontal strip.
+- `GlassUserList` caps its list at 320dp: four 60dp rows plus the 56dp Add row (306dp with the
+  2dp gaps) fit a 540dp television above the server row. A fifth profile scrolls; the pane must
+  never grow past the bottom edge, or the "Switch servers" row is the thing that gets cut. A cap
+  at the exact content height clips the Add row by the rounding.
+- Rows are not glass themselves. The pane is the material, the row is a 15dp fill on focus and a
+  1.5dp rim; five stacked capsules would read as five pieces of chrome.
+- `GlassType.hero` (52sp) exists for this screen. It is the only display line in the app.
+- `ProfilePickerShotTest` renders the picker at 960×540 and writes `/tmp/profile_picker.png`. The
+  setup screen cannot be reached on the emulator without a server, so this is the visual check.
+
+## Home structure
+
+- The page has labelled sections: watch rows → **For you** (My List, For You, Because you're
+  watching) → **Your library** (the configured rows) → trailing discovery (Top 10, requests).
+  Before this, all five discovery shelves were inserted directly under the first watch row, so
+  every library row was two screens down and the page read as one undifferentiated stack.
+- `HomePageContent(shelves = …)` is the For-you block; `trailingShelves = …` is the end of the
+  page. `librarySectionStart` comes from the configured row list, not from the loaded rows, so a
+  cold start does not label a pending Continue Watching row as "Your library".
+- The section caption is a small tracked caps line, not a pill and not glass. It organises the
+  shelves; it is not another object competing with them.
+
+## Backdrop behaviour
+
+- `BackdropService.submit()` shows the artwork **immediately** and extracts the palette
+  afterwards. It used to set `imageUrl = null` for the whole 500ms extraction, so D-pad movement
+  blanked the frame between cards and the background appeared not to follow focus. Never null the
+  image to debounce colour work again.
+- A focused item with no landscape art (a live channel, a person) **keeps the previous artwork**
+  instead of clearing the frame. `submit(itemId, null)` is a no-op.
+- `Backdrop()` falls back to `GlassAmbientBackground` when no artwork is focused: the theme's
+  palette field, so the "nothing selected" background follows the colour theme. `BACKDROP_NONE`
+  still draws nothing.
+- The palette guard is `itemId`, so a stale extraction cannot repaint a newer item's colours.
+
+## Live TV order and search
+
+- Live TV tabs are **Sports, Guide, Channels, DVR** (then recording folders). This fork's tuner is
+  a sports tuner: every channel is a fixture and "what game is on?" is the question the page
+  exists to answer. The guide is the detail view, not the landing page.
+- Search combined mode draws Seerr results as a **separate shelf** (`SeerrSearchShelf`) above the
+  library grid, and in the empty-library branch below the "nothing matches" sentence. Library
+  types already include `TV_CHANNEL` and `LIVE_TV_PROGRAM`, so live sport is searched with
+  everything else. Never merge request results into the library grid: the viewer then has to
+  identify which posters they own.
+- Seerr Discover de-duplicates: titles on the trending shelf are removed from the Movies/TV rows,
+  and upcoming films and shows are one **Coming soon** shelf sorted by release date. The page used
+  to be four views of the same catalogue.
+
+## Guide controls
+
+- In the guide, **OK tunes** a programme that is on now, and **hold** opens the details/record
+  sheet. The sheet used to be the only path, which made every channel change two presses through
+  a dialog — the wrong shape on a remote, and worse on a tuner where every channel is a live
+  fixture. A programme that has not started still opens the sheet: tuning its channel would show
+  whatever is on *now*, which is not what the viewer selected.
+- Gaps stay unfocusable. A cell that cannot be watched must not collect D-pad presses.

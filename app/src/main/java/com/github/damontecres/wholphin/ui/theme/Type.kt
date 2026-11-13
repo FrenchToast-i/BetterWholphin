@@ -114,6 +114,17 @@ object GlassType {
     /** Page title. */
     val pageTitle = glass(size = 30, weight = FontWeight.Bold, tracking = -0.8f)
 
+    /**
+     * The one display line on a landing screen ("Who's watching?").
+     *
+     * A television is read from three metres; this is the size at which the setup screen has a
+     * subject instead of a row of discs floating in the middle of a dark field.
+     */
+    val hero = glass(size = 52, weight = FontWeight.Bold, tracking = -1.8f, lineHeight = 56)
+
+    /** Supporting copy under [hero]. */
+    val heroSub = glass(size = 19, weight = FontWeight.Normal, tracking = 0.1f, lineHeight = 26)
+
     /** Group heading, e.g. "Interface" in settings. */
     val sectionTitle = glass(size = 22, weight = FontWeight.Bold, tracking = -0.4f)
 

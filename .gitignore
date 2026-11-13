@@ -68,3 +68,6 @@ scripts/mpv/prefix/
 # Local scratch
 .tmpglass/
 .freebuff/
+
+# Local-only notes and credentials (never commit)
+LOCAL-CREDENTIALS.md

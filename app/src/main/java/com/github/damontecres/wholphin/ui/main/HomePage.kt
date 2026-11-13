@@ -34,6 +34,7 @@ import androidx.compose.ui.focus.focusProperties
 import androidx.compose.ui.focus.focusRequester
 import androidx.compose.ui.focus.focusRestorer
 import androidx.compose.ui.focus.onFocusChanged
+import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.input.key.KeyEvent
 import androidx.compose.ui.input.key.onKeyEvent
 import androidx.compose.ui.platform.LocalContext
@@ -86,6 +87,7 @@ import com.github.damontecres.wholphin.ui.playback.playable
 import com.github.damontecres.wholphin.ui.playback.scale
 import com.github.damontecres.wholphin.ui.rememberPosition
 import com.github.damontecres.wholphin.ui.theme.GlassPanel
+import com.github.damontecres.wholphin.ui.theme.GlassType
 import com.github.damontecres.wholphin.ui.theme.LocalLiquidGlass
 import com.github.damontecres.wholphin.ui.tryRequestFocus
 import com.github.damontecres.wholphin.ui.util.ScrollToTopBringIntoViewSpec
@@ -130,6 +132,16 @@ fun HomePage(
     val loading = state.loadingState
     val refreshing = state.refreshState
     val homeRows = state.homeRows
+    // The first configured row that is not a watch row. "Your library" is placed here, so the
+    // sections describe the page the viewer arranged rather than a fixed guess.
+    val librarySectionStart =
+        remember(state.settings.rows) {
+            state.settings.rows.indexOfFirst { row ->
+                row.config !is HomeRowConfig.ContinueWatching &&
+                    row.config !is HomeRowConfig.NextUp &&
+                    row.config !is HomeRowConfig.ContinueWatchingCombined
+            }
+        }
 
     when (val state = loading) {
         is LoadingState.Error -> {
@@ -268,6 +280,11 @@ fun HomePage(
                 // "here is where you are, here is what is like it". Saved titles come first: the
                 // viewer put them there on purpose, so they outrank a suggestion. For You sits
                 // between them because it is the one shelf whose every card is already playable.
+                shelfSectionLabel = stringResource(R.string.for_you),
+                librarySectionLabel = stringResource(R.string.your_library),
+                librarySectionStart = librarySectionStart,
+                // Personal, playable rails stay together under "For you"; requests and the
+                // Top 10 are the end of the page, after the viewer's own library.
                 shelves =
                     listOf(
                         { reportFocus ->
@@ -300,6 +317,9 @@ fun HomePage(
                                 onFocusSeed = reportFocus,
                             )
                         },
+                    ),
+                trailingShelves =
+                    listOf(
                         { _ ->
                             if (preferences.seerrEnabled) {
                                 SeerrRequestShelf(
@@ -395,6 +415,24 @@ private sealed interface HomeListEntry {
     ) : HomeListEntry {
         override val key: String get() = "shelf_$index"
     }
+
+    data class TrailingShelf(
+        val index: Int,
+    ) : HomeListEntry {
+        override val key: String get() = "trailing_shelf_$index"
+    }
+
+    /**
+     * A quiet section caption. The home page is a stack of unrelated shelves, and without a
+     * label the discovery rails read as if they were library rows that happen to be full of
+     * films the viewer does not own.
+     */
+    data class Label(
+        val id: String,
+        val text: String,
+    ) : HomeListEntry {
+        override val key: String get() = "label_$id"
+    }
 }
 
 val HomeRowLoadingState?.isContinueWatchingNextUp: Boolean
@@ -438,6 +476,16 @@ fun HomePageContent(
      * report when focus leaves the shelf, which is what sends the hero back to the row above.
      */
     shelves: List<@Composable (reportFocus: (BaseItem?) -> Unit) -> Unit> = emptyList(),
+    /**
+     * Shelves drawn after every configured library row. Requests and the Top 10 are the end of
+     * the page, not the middle of it: they used to sit in the same block as the personal rails,
+     * so five discovery shelves stacked under the watch row and pushed the viewer's own library
+     * below the fold.
+     */
+    trailingShelves: List<@Composable (reportFocus: (BaseItem?) -> Unit) -> Unit> = emptyList(),
+    shelfSectionLabel: String? = null,
+    librarySectionLabel: String? = null,
+    librarySectionStart: Int = -1,
 ) {
     val rowFocusedItem =
         remember(homeRows, position) {
@@ -472,11 +520,18 @@ fun HomePageContent(
     val entries: List<HomeListEntry> =
         buildList {
             homeRows.forEachIndexed { index, _ ->
+                if (index == librarySectionStart && librarySectionLabel != null) {
+                    add(HomeListEntry.Label("library", librarySectionLabel))
+                }
                 add(HomeListEntry.Row(index))
                 if (index == shelfAfterRow) {
+                    if (shelves.isNotEmpty() && shelfSectionLabel != null) {
+                        add(HomeListEntry.Label("shelves", shelfSectionLabel))
+                    }
                     shelves.indices.forEach { add(HomeListEntry.Shelf(it)) }
                 }
             }
+            trailingShelves.indices.forEach { add(HomeListEntry.TrailingShelf(it)) }
         }
 
     val rowFocusRequesters = remember(homeRows.size) { List(homeRows.size) { FocusRequester() } }
@@ -594,14 +649,24 @@ fun HomePageContent(
                             .focusRestorer(),
                 ) {
                     items(entries, key = { it.key }) { entry ->
-                        if (entry is HomeListEntry.Shelf) {
+                        if (entry is HomeListEntry.Label) {
+                            HomeSectionLabel(entry.text)
+                            return@items
+                        }
+                        if (entry is HomeListEntry.Shelf || entry is HomeListEntry.TrailingShelf) {
+                            val shelf =
+                                if (entry is HomeListEntry.Shelf) {
+                                    shelves[entry.index]
+                                } else {
+                                    trailingShelves[(entry as HomeListEntry.TrailingShelf).index]
+                                }
                             Box(
                                 modifier =
                                     Modifier.onFocusChanged {
                                         if (!it.hasFocus) shelfFocusedItem = null
                                     },
                             ) {
-                                shelves[entry.index].invoke { item -> shelfFocusedItem = item }
+                                shelf.invoke { item -> shelfFocusedItem = item }
                             }
                             return@items
                         }
@@ -769,6 +834,35 @@ fun HomePageContent(
             else -> {}
         }
     }
+}
+
+/**
+ * A quiet caption between the page's blocks.
+ *
+ * No pill, no glass: the sections are an ordering aid, not another object competing with the
+ * shelves. The tracking is what makes a small caps line read as structure from the sofa.
+ */
+@Composable
+private fun HomeSectionLabel(text: String) {
+    val glass = LocalLiquidGlass.current
+    Text(
+        text = text.uppercase(),
+        style = if (glass) GlassType.sectionLabel else MaterialTheme.typography.titleSmall,
+        color =
+            if (glass) {
+                Color.White.copy(alpha = 0.58f)
+            } else {
+                MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.75f)
+            },
+        modifier =
+            Modifier
+                .fillMaxWidth()
+                .padding(
+                    start = if (glass) 0.dp else 16.dp,
+                    top = 14.dp,
+                    bottom = 2.dp,
+                ),
+    )
 }
 
 @Composable

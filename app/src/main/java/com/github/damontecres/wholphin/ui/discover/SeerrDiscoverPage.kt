@@ -326,12 +326,53 @@ data class DiscoverState(
 private const val ROW_TRENDING = 0
 private const val ROW_MOVIES = ROW_TRENDING + 1
 private const val ROW_GENRES_MOVIE = ROW_MOVIES + 1
-private const val ROW_UPCOMING_MOVIES = ROW_GENRES_MOVIE + 1
-private const val ROW_TV = ROW_UPCOMING_MOVIES + 1
+private const val ROW_TV = ROW_GENRES_MOVIE + 1
 private const val ROW_GENRES_TV = ROW_TV + 1
-private const val ROW_UPCOMING_TV = ROW_GENRES_TV + 1
+private const val ROW_COMING_SOON = ROW_GENRES_TV + 1
 
-private const val LAST_ROW = ROW_UPCOMING_TV
+private const val LAST_ROW = ROW_COMING_SOON
+
+/** Drop every title an earlier row already showed. */
+private fun DiscoverRowData.excluding(ids: Set<Int>): DiscoverRowData =
+    if (ids.isEmpty()) {
+        this
+    } else {
+        copy(
+            items =
+                when (val current = items) {
+                    is DataLoadingState.Success ->
+                        DataLoadingState.Success(current.data.filterNot { it.id in ids })
+                    else -> items
+                },
+        )
+    }
+
+/**
+ * Films and shows that are not out yet are one question — "what is coming?" — so they are one
+ * shelf, merged by date. Two shelves split by media type made the page ask the viewer to care
+ * about a distinction they do not make when browsing a release calendar.
+ */
+private fun DiscoverState.comingSoon(): DiscoverRowData {
+    val movies = (upcomingMovies.items as? DataLoadingState.Success)?.data.orEmpty()
+    val shows = (upcomingTv.items as? DataLoadingState.Success)?.data.orEmpty()
+    val merged =
+        (movies + shows)
+            .distinctBy { it.id }
+            .sortedBy { it.releaseDate?.toString().orEmpty() }
+    val loading =
+        when {
+            upcomingMovies.items is DataLoadingState.Success ||
+                upcomingTv.items is DataLoadingState.Success -> DataLoadingState.Success(merged)
+            upcomingMovies.items is DataLoadingState.Error -> upcomingMovies.items
+            upcomingTv.items is DataLoadingState.Error -> upcomingTv.items
+            else -> DataLoadingState.Pending
+        }
+    return DiscoverRowData(
+        title = ResStringProvider(R.string.coming_soon),
+        items = loading,
+        type = DiscoverRequestType.UNKNOWN,
+    )
+}
 
 @OptIn(ExperimentalFoundationApi::class)
 @Composable
@@ -346,16 +387,25 @@ fun SeerrDiscoverPage(
 
     val focusRequesters = remember { List(LAST_ROW + 1) { FocusRequester() } }
     var position by rememberPosition(0, -1)
+    // Trending is the page's lead, so a blockbuster that appears there is not repeated one shelf
+    // lower under "Movies". The transformer shelves kept their own copies of the same posters,
+    // which is what made the page feel like four views of one catalog rather than a front page.
+    val trendingIds =
+        remember(state.trending) {
+            (state.trending.items as? DataLoadingState.Success)?.data?.map { it.id }?.toSet().orEmpty()
+        }
+    val movieRow = remember(state.movies, trendingIds) { state.movies.excluding(trendingIds) }
+    val tvRow = remember(state.tv, trendingIds) { state.tv.excluding(trendingIds) }
+    val comingSoonRow = remember(state.upcomingMovies, state.upcomingTv) { state.comingSoon() }
     val focusedItem: DiscoverFocusedItem? =
-        remember(position) {
+        remember(position, state) {
             position.let {
                 val discoverRow =
                     when (position.row) {
                         ROW_TRENDING -> state.trending
-                        ROW_MOVIES -> state.movies
-                        ROW_UPCOMING_MOVIES -> state.upcomingMovies
-                        ROW_TV -> state.tv
-                        ROW_UPCOMING_TV -> state.upcomingTv
+                        ROW_MOVIES -> movieRow
+                        ROW_TV -> tvRow
+                        ROW_COMING_SOON -> comingSoonRow
                         else -> null
                     }
                 if (discoverRow != null) {
@@ -519,7 +569,7 @@ fun SeerrDiscoverPage(
                 item { discoverItemRow(ROW_TRENDING, state.trending) }
 
                 // Movies
-                item { discoverItemRow(ROW_MOVIES, state.movies) }
+                item { discoverItemRow(ROW_MOVIES, movieRow) }
                 item {
                     CompositionLocalProvider(LocalBringIntoViewSpec provides defaultBringIntoViewSpec) {
                         DiscoverGenreRow(
@@ -557,10 +607,8 @@ fun SeerrDiscoverPage(
                         )
                     }
                 }
-                item { discoverItemRow(ROW_UPCOMING_MOVIES, state.upcomingMovies) }
-
                 // TV
-                item { discoverItemRow(ROW_TV, state.tv) }
+                item { discoverItemRow(ROW_TV, tvRow) }
                 item {
                     CompositionLocalProvider(LocalBringIntoViewSpec provides defaultBringIntoViewSpec) {
                         DiscoverGenreRow(
@@ -598,7 +646,7 @@ fun SeerrDiscoverPage(
                         )
                     }
                 }
-                item { discoverItemRow(ROW_UPCOMING_TV, state.upcomingTv) }
+                item { discoverItemRow(ROW_COMING_SOON, comingSoonRow) }
             }
         }
     }

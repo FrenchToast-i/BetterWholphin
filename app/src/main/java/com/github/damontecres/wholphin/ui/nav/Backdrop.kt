@@ -36,6 +36,7 @@ import coil3.request.transitionFactory
 import com.github.damontecres.wholphin.preferences.BackdropStyle
 import com.github.damontecres.wholphin.services.BackdropResult
 import com.github.damontecres.wholphin.ui.CrossFadeFactory
+import com.github.damontecres.wholphin.ui.theme.GlassAmbientBackground
 import kotlin.time.Duration
 import kotlin.time.Duration.Companion.milliseconds
 
@@ -150,6 +151,17 @@ fun Backdrop(
                         )
                     },
         )
+    }
+    if (backdropStyle == BackdropStyle.BACKDROP_NONE) {
+        return
+    }
+    if (backdrop.imageUrl == null) {
+        // Nothing is focused, or the focused thing has no landscape art. A television with a
+        // flat black field looks broken between pages, and glass has nothing to refract; the
+        // theme's ambient field is quiet enough to sit under every page and still changes with
+        // the palette the viewer chose.
+        GlassAmbientBackground(modifier)
+        return
     }
     if (backdropStyle != BackdropStyle.BACKDROP_NONE) {
         Box(

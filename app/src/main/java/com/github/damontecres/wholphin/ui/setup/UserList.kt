@@ -8,15 +8,20 @@ import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.PaddingValues
 import androidx.compose.foundation.layout.Row
+import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
+import androidx.compose.foundation.layout.height
+import androidx.compose.foundation.layout.heightIn
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.layout.wrapContentWidth
+import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.LazyRow
 import androidx.compose.foundation.lazy.itemsIndexed
 import androidx.compose.foundation.shape.CircleShape
+import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.Add
 import androidx.compose.material.icons.filled.Delete
@@ -61,13 +66,18 @@ import com.github.damontecres.wholphin.ui.theme.GlassTokens
 import com.github.damontecres.wholphin.ui.theme.GlassType
 import com.github.damontecres.wholphin.ui.theme.LocalLiquidGlass
 import com.github.damontecres.wholphin.ui.theme.WholphinTheme
+import com.github.damontecres.wholphin.ui.theme.glassSurface
 import com.github.damontecres.wholphin.ui.toServerString
 import com.github.damontecres.wholphin.ui.tryRequestFocus
 import java.util.UUID
 
 /**
- * Display a list of users plus option to add a new one or switch servers
- * Redesigned to match streaming service style with horizontal scrollable user icons
+ * Display a list of users plus option to add a new one or switch servers.
+ *
+ * Glass mode is a vertical sheet: profiles are rows beneath each other in a pane anchored to the
+ * top-right of the setup screen, which is the layout a television viewer expects from a profile
+ * picker and the one this fork asked for. The classic UI keeps the horizontal strip it has always
+ * had, because that layout is also what the non-glass themes are shaped around.
  */
 @Composable
 fun UserList(
@@ -81,84 +91,28 @@ fun UserList(
 ) {
     var showDeleteDialog by remember { mutableStateOf<JellyfinUserAndImage?>(null) }
 
-    val glass = LocalLiquidGlass.current
-    Column(
-        modifier = modifier,
-        horizontalAlignment = Alignment.CenterHorizontally,
-        verticalArrangement = Arrangement.spacedBy(if (glass) 16.dp else 24.dp),
-    ) {
-        // Horizontal scrollable list of user icons - centered
-        Box(
-            modifier = Modifier.fillMaxWidth(),
-            contentAlignment = Alignment.Center,
-        ) {
-            val focusRequester = remember { FocusRequester() }
-            val firstFocusRequester = remember { FocusRequester() }
-            if (users.isNotEmpty()) {
-                LaunchedEffect(Unit) { focusRequester.tryRequestFocus() }
-            }
-            LazyRow(
-                horizontalArrangement =
-                    Arrangement.spacedBy(if (glass) GlassTokens.profileGap else 24.dp),
-                // Focus grows a disc by a few dp; the row needs just enough edge room for that
-                // and no more, or the first profile sits visibly inboard of the title.
-                contentPadding = PaddingValues(horizontal = if (glass) 4.dp else 48.dp, vertical = 8.dp),
-                modifier =
-                    Modifier
-                        .wrapContentWidth()
-                        .focusRestorer(firstFocusRequester)
-                        .focusRequester(focusRequester),
-            ) {
-                itemsIndexed(users) { index, user ->
-                    UserIconCard(
-                        user = user,
-                        isCurrentUser = user.user.id == currentUser?.id,
-                        onClick = { onSwitchUser.invoke(user.user) },
-                        onLongClick = { showDeleteDialog = user },
-                        modifier = if (index == 0) Modifier.focusRequester(firstFocusRequester) else Modifier,
-                    )
-                }
-                // Add User card - always rightmost
-                item {
-                    AddUserCard(
-                        onClick = { onAddUser.invoke() },
-                    )
-                }
-            }
-        }
-
-        // Switch servers button below user list - centered
-        Row(
-            horizontalArrangement = Arrangement.Center,
-            modifier =
-                Modifier
-                    .fillMaxWidth()
-                    .padding(vertical = 8.dp),
-        ) {
-            Button(
-                onClick = { onSwitchServer.invoke() },
-                glass = LocalLiquidGlass.current,
-                contentHeight = 44.dp,
-            ) {
-                Row(
-                    modifier = Modifier.fillMaxWidth(),
-                    horizontalArrangement = Arrangement.Center,
-                    verticalAlignment = Alignment.CenterVertically,
-                ) {
-                    Text(
-                        text = stringResource(R.string.fa_arrow_left_arrow_right),
-                        fontFamily = FontAwesome,
-                        modifier = Modifier.padding(end = 8.dp),
-                    )
-                    Text(
-                        text = stringResource(R.string.switch_servers),
-                        style = if (LocalLiquidGlass.current) GlassType.button else MaterialTheme.typography.labelLarge,
-                        textAlign = TextAlign.Center,
-                    )
-                }
-            }
-        }
+    if (LocalLiquidGlass.current) {
+        GlassUserList(
+            users = users,
+            currentUser = currentUser,
+            onSwitchUser = onSwitchUser,
+            onAddUser = onAddUser,
+            onLongClickUser = { showDeleteDialog = it },
+            onSwitchServer = onSwitchServer,
+            modifier = modifier,
+        )
+    } else {
+        ClassicUserList(
+            users = users,
+            currentUser = currentUser,
+            onSwitchUser = onSwitchUser,
+            onAddUser = onAddUser,
+            onLongClickUser = { showDeleteDialog = it },
+            onSwitchServer = onSwitchServer,
+            modifier = modifier,
+        )
     }
+
     showDeleteDialog?.let { user ->
         DialogPopup(
             showDialog = true,
@@ -193,6 +147,360 @@ fun UserList(
     }
 }
 
+/**
+ * The glass profile sheet.
+ *
+ * One pane, rows inside it, no glass on the rows themselves: the material is the pane, and a
+ * capsule per profile would make five pieces of chrome stacked in a column. Focus is a quiet
+ * lift of white plus a hairline rim — the same signal as every other list in the app.
+ */
+@Composable
+private fun GlassUserList(
+    users: List<JellyfinUserAndImage>,
+    currentUser: JellyfinUser?,
+    onSwitchUser: (JellyfinUser) -> Unit,
+    onAddUser: () -> Unit,
+    onLongClickUser: (JellyfinUserAndImage) -> Unit,
+    onSwitchServer: () -> Unit,
+    modifier: Modifier = Modifier,
+) {
+    val focusRequester = remember { FocusRequester() }
+    val firstFocusRequester = remember { FocusRequester() }
+    LaunchedEffect(users) {
+        if (users.isNotEmpty()) firstFocusRequester.tryRequestFocus()
+    }
+
+    Column(
+        modifier =
+            modifier
+                .width(392.dp)
+                .glassSurface(
+                    shape = GlassTokens.panelShape,
+                    tint = GlassTokens.sheetTint,
+                    scrim = GlassTokens.SHEET_SCRIM,
+                    elevation = GlassTokens.dialogElevation,
+                ).padding(vertical = 12.dp),
+    ) {
+        Text(
+            text = stringResource(R.string.profiles).uppercase(),
+            style = GlassType.sectionLabel,
+            color = Color.White.copy(alpha = 0.52f),
+            modifier = Modifier.padding(start = 24.dp, top = 4.dp, bottom = 8.dp),
+        )
+        LazyColumn(
+            contentPadding = PaddingValues(horizontal = 8.dp, vertical = 2.dp),
+            verticalArrangement = Arrangement.spacedBy(2.dp),
+            modifier =
+                Modifier
+                    .fillMaxWidth()
+                    // Four profiles and the Add row (306dp of content) fit a 540dp television
+                    // with air at the foot; a fifth scrolls instead of pushing the server row
+                    // off the sheet. Do not lower this to the exact content height: the list
+                    // then clips the Add row by the few dp that `heightIn` rounds off.
+                    .heightIn(max = 320.dp)
+                    .focusRestorer(firstFocusRequester)
+                    .focusRequester(focusRequester),
+        ) {
+            itemsIndexed(users, key = { _, user -> user.user.id }) { index, user ->
+                GlassProfileRow(
+                    user = user,
+                    isCurrentUser = user.user.id == currentUser?.id,
+                    onClick = { onSwitchUser.invoke(user.user) },
+                    onLongClick = { onLongClickUser.invoke(user) },
+                    modifier = if (index == 0) Modifier.focusRequester(firstFocusRequester) else Modifier,
+                )
+            }
+            item(key = "add_profile") {
+                GlassAddProfileRow(onClick = onAddUser)
+            }
+        }
+        Spacer(Modifier.height(10.dp))
+        Box(
+            modifier =
+                Modifier
+                    .fillMaxWidth()
+                    .height(1.dp)
+                    .padding(horizontal = 20.dp)
+                    .background(Color.White.copy(alpha = 0.10f)),
+        )
+        GlassServerRow(
+            onClick = onSwitchServer,
+            modifier = Modifier.padding(top = 8.dp),
+        )
+    }
+}
+
+@Composable
+private fun GlassProfileRow(
+    user: JellyfinUserAndImage,
+    isCurrentUser: Boolean,
+    onClick: () -> Unit,
+    onLongClick: () -> Unit,
+    modifier: Modifier = Modifier,
+) {
+    val interactionSource = remember { MutableInteractionSource() }
+    val shape = RoundedCornerShape(15.dp)
+    val userColor = rememberIdColor(user.user.id)
+    val subtitle =
+        when {
+            isCurrentUser -> stringResource(R.string.profile_watching_now)
+            user.user.hasPin -> stringResource(R.string.profile_pin_required)
+            user.user.accessToken == null || user.user.requireLogin ->
+                stringResource(R.string.profile_sign_in_required)
+            else -> stringResource(R.string.profile_tap_to_switch)
+        }
+
+    Surface(
+        onClick = onClick,
+        onLongClick = onLongClick,
+        interactionSource = interactionSource,
+        shape = ClickableSurfaceDefaults.shape(shape),
+        colors =
+            ClickableSurfaceDefaults.colors(
+                containerColor = Color.Transparent,
+                contentColor = Color.White.copy(alpha = 0.92f),
+                focusedContainerColor = Color.White.copy(alpha = 0.15f),
+                focusedContentColor = Color.White,
+            ),
+        border =
+            ClickableSurfaceDefaults.border(
+                focusedBorder =
+                    Border(
+                        border = BorderStroke(1.5.dp, Color.White.copy(alpha = 0.55f)),
+                        shape = shape,
+                    ),
+            ),
+        // The sheet keeps its silhouette; focus is a wash and a rim, not a growing card.
+        scale = ClickableSurfaceDefaults.scale(focusedScale = 1.0f, pressedScale = 0.985f),
+        modifier = modifier.fillMaxWidth().height(60.dp),
+    ) {
+        Row(
+            verticalAlignment = Alignment.CenterVertically,
+            horizontalArrangement = Arrangement.spacedBy(14.dp),
+            modifier = Modifier.fillMaxSize().padding(horizontal = 14.dp),
+        ) {
+            Box(
+                modifier =
+                    Modifier
+                        .size(44.dp)
+                        .clip(CircleShape)
+                        .background(userColor.copy(alpha = 0.55f)),
+                contentAlignment = Alignment.Center,
+            ) {
+                UserIconCardImage(
+                    id = user.user.id,
+                    name = user.user.name,
+                    imageUrl = user.imageUrl,
+                    textColor = Color.White,
+                    letterSize = 19.sp,
+                    modifier = Modifier.fillMaxSize(),
+                )
+            }
+            Column(
+                verticalArrangement = Arrangement.spacedBy(1.dp),
+                modifier = Modifier.weight(1f),
+            ) {
+                Text(
+                    text = user.user.name ?: user.user.id.toServerString(),
+                    style = GlassType.settingsTitle.copy(fontSize = 18.sp, lineHeight = 22.sp),
+                    color = Color.White,
+                    maxLines = 1,
+                    overflow = TextOverflow.Ellipsis,
+                )
+                Text(
+                    text = subtitle,
+                    style = GlassType.settingsSummary,
+                    color = Color.White.copy(alpha = if (isCurrentUser) 0.78f else 0.48f),
+                    maxLines = 1,
+                    overflow = TextOverflow.Ellipsis,
+                )
+            }
+            if (isCurrentUser) {
+                Box(
+                    modifier =
+                        Modifier
+                            .size(7.dp)
+                            .clip(CircleShape)
+                            .background(Color.White.copy(alpha = 0.92f)),
+                )
+            } else {
+                Text(
+                    text = "\u203A",
+                    style = GlassType.chevron,
+                    color = Color.White.copy(alpha = 0.32f),
+                )
+            }
+        }
+    }
+}
+
+@Composable
+private fun GlassAddProfileRow(
+    onClick: () -> Unit,
+    modifier: Modifier = Modifier,
+) {
+    val shape = RoundedCornerShape(15.dp)
+    Surface(
+        onClick = onClick,
+        shape = ClickableSurfaceDefaults.shape(shape),
+        colors =
+            ClickableSurfaceDefaults.colors(
+                containerColor = Color.Transparent,
+                contentColor = Color.White.copy(alpha = 0.72f),
+                focusedContainerColor = Color.White,
+                focusedContentColor = Color.Black,
+            ),
+        scale = ClickableSurfaceDefaults.scale(focusedScale = 1.0f, pressedScale = 0.985f),
+        modifier = modifier.fillMaxWidth().height(56.dp),
+    ) {
+        Row(
+            verticalAlignment = Alignment.CenterVertically,
+            horizontalArrangement = Arrangement.spacedBy(14.dp),
+            modifier = Modifier.fillMaxSize().padding(horizontal = 14.dp),
+        ) {
+            Box(
+                modifier =
+                    Modifier
+                        .size(36.dp)
+                        .clip(CircleShape)
+                        .background(Color.White.copy(alpha = 0.10f)),
+                contentAlignment = Alignment.Center,
+            ) {
+                Icon(
+                    imageVector = Icons.Default.Add,
+                    contentDescription = null,
+                    tint = Color.Unspecified,
+                    modifier = Modifier.size(18.dp),
+                )
+            }
+            Text(
+                text = stringResource(R.string.add_user),
+                style = GlassType.settingsTitle.copy(fontSize = 17.sp),
+            )
+        }
+    }
+}
+
+/** The way back to the server picker, quiet enough not to compete with the profiles. */
+@Composable
+private fun GlassServerRow(
+    onClick: () -> Unit,
+    modifier: Modifier = Modifier,
+) {
+    val shape = RoundedCornerShape(15.dp)
+    Surface(
+        onClick = onClick,
+        shape = ClickableSurfaceDefaults.shape(shape),
+        colors =
+            ClickableSurfaceDefaults.colors(
+                containerColor = Color.Transparent,
+                contentColor = Color.White.copy(alpha = 0.55f),
+                focusedContainerColor = Color.White.copy(alpha = 0.12f),
+                focusedContentColor = Color.White,
+            ),
+        scale = ClickableSurfaceDefaults.scale(focusedScale = 1.0f, pressedScale = 0.985f),
+        modifier = modifier.fillMaxWidth().height(50.dp).padding(horizontal = 8.dp),
+    ) {
+        Row(
+            verticalAlignment = Alignment.CenterVertically,
+            horizontalArrangement = Arrangement.spacedBy(10.dp),
+            modifier = Modifier.fillMaxSize().padding(horizontal = 14.dp),
+        ) {
+            Text(
+                text = stringResource(R.string.fa_arrow_left_arrow_right),
+                fontFamily = FontAwesome,
+                style = GlassType.meta,
+                color = Color.Unspecified,
+            )
+            Text(
+                text = stringResource(R.string.switch_servers),
+                style = GlassType.settingsTitle.copy(fontSize = 15.sp),
+            )
+        }
+    }
+}
+
+@Composable
+private fun ClassicUserList(
+    users: List<JellyfinUserAndImage>,
+    currentUser: JellyfinUser?,
+    onSwitchUser: (JellyfinUser) -> Unit,
+    onAddUser: () -> Unit,
+    onLongClickUser: (JellyfinUserAndImage) -> Unit,
+    onSwitchServer: () -> Unit,
+    modifier: Modifier = Modifier,
+) {
+    Column(
+        modifier = modifier,
+        horizontalAlignment = Alignment.CenterHorizontally,
+        verticalArrangement = Arrangement.spacedBy(24.dp),
+    ) {
+        Box(
+            modifier = Modifier.fillMaxWidth(),
+            contentAlignment = Alignment.Center,
+        ) {
+            val focusRequester = remember { FocusRequester() }
+            val firstFocusRequester = remember { FocusRequester() }
+            if (users.isNotEmpty()) {
+                LaunchedEffect(Unit) { focusRequester.tryRequestFocus() }
+            }
+            LazyRow(
+                horizontalArrangement = Arrangement.spacedBy(24.dp),
+                contentPadding = PaddingValues(horizontal = 48.dp, vertical = 8.dp),
+                modifier =
+                    Modifier
+                        .wrapContentWidth()
+                        .focusRestorer(firstFocusRequester)
+                        .focusRequester(focusRequester),
+            ) {
+                itemsIndexed(users) { index, user ->
+                    UserIconCard(
+                        user = user,
+                        isCurrentUser = user.user.id == currentUser?.id,
+                        onClick = { onSwitchUser.invoke(user.user) },
+                        onLongClick = { onLongClickUser.invoke(user) },
+                        modifier = if (index == 0) Modifier.focusRequester(firstFocusRequester) else Modifier,
+                    )
+                }
+                item {
+                    AddUserCard(onClick = { onAddUser.invoke() })
+                }
+            }
+        }
+
+        Row(
+            horizontalArrangement = Arrangement.Center,
+            modifier =
+                Modifier
+                    .fillMaxWidth()
+                    .padding(vertical = 8.dp),
+        ) {
+            Button(
+                onClick = { onSwitchServer.invoke() },
+                glass = false,
+                contentHeight = 44.dp,
+            ) {
+                Row(
+                    modifier = Modifier.fillMaxWidth(),
+                    horizontalArrangement = Arrangement.Center,
+                    verticalAlignment = Alignment.CenterVertically,
+                ) {
+                    Text(
+                        text = stringResource(R.string.fa_arrow_left_arrow_right),
+                        fontFamily = FontAwesome,
+                        modifier = Modifier.padding(end = 8.dp),
+                    )
+                    Text(
+                        text = stringResource(R.string.switch_servers),
+                        style = MaterialTheme.typography.labelLarge,
+                        textAlign = TextAlign.Center,
+                    )
+                }
+            }
+        }
+    }
+}
+
 @Composable
 private fun UserIconCard(
     user: JellyfinUserAndImage,
@@ -202,121 +510,58 @@ private fun UserIconCard(
     modifier: Modifier = Modifier,
 ) {
     val interactionSource = remember { MutableInteractionSource() }
-    val glass = LocalLiquidGlass.current
-    // Generate unique color for this user
     val userColor = rememberIdColor(user.user.id)
-
-    // Track image loading errors
-    var imageError by remember { mutableStateOf(false) }
-
-    // Card dimensions - circular card. Glass uses the smaller tvOS profile disc so a row of
-    // profiles fits inside the setup sheet instead of being clipped by its edge.
-    val cardSize = if (glass) GlassTokens.profileSize else Cards.serverUserCircle
 
     Column(
         modifier = modifier,
         horizontalAlignment = Alignment.CenterHorizontally,
-        verticalArrangement = Arrangement.spacedBy(if (glass) GlassTokens.profileLabelGap else 24.dp),
+        verticalArrangement = Arrangement.spacedBy(24.dp),
     ) {
-        // Circular card with colored background
         Surface(
             onClick = onClick,
             onLongClick = onLongClick,
             interactionSource = interactionSource,
-            modifier = Modifier.size(cardSize),
+            modifier = Modifier.size(Cards.serverUserCircle),
             shape = ClickableSurfaceDefaults.shape(shape = CircleShape),
             colors =
                 ClickableSurfaceDefaults.colors(
-                    containerColor =
-                        if (isCurrentUser) {
-                            userColor.copy(alpha = if (glass) 0.46f else 0.7f)
-                        } else {
-                            userColor.copy(alpha = if (glass) 0.34f else 0.5f)
-                        },
-                    focusedContainerColor =
-                        if (isCurrentUser) {
-                            userColor.copy(alpha = if (glass) 0.66f else 0.9f)
-                        } else {
-                            userColor.copy(alpha = if (glass) 0.56f else 0.7f)
-                        },
+                    containerColor = userColor.copy(alpha = if (isCurrentUser) 0.7f else 0.5f),
+                    focusedContainerColor = userColor.copy(alpha = if (isCurrentUser) 0.9f else 0.7f),
                 ),
             border =
                 ClickableSurfaceDefaults.border(
-                    // The signed-in profile keeps a quiet ring at rest, the way a tvOS profile
-                    // shows which viewer is active before anything is focused.
-                    border =
-                        if (glass && isCurrentUser) {
-                            Border(
-                                border = BorderStroke(2.dp, Color.White.copy(alpha = 0.82f)),
-                                shape = CircleShape,
-                            )
-                        } else {
-                            Border.None
-                        },
                     focusedBorder =
                         Border(
-                            border =
-                                BorderStroke(
-                                    width = if (glass) 2.5.dp else 3.dp,
-                                    color = if (glass) Color.White else MaterialTheme.colorScheme.onSurface,
-                                ),
+                            border = BorderStroke(3.dp, MaterialTheme.colorScheme.onSurface),
                             shape = CircleShape,
                         ),
                 ),
-            scale = ClickableSurfaceDefaults.scale(focusedScale = if (glass) 1.08f else 1.2f),
+            scale = ClickableSurfaceDefaults.scale(focusedScale = 1.2f),
         ) {
             Box(
                 modifier = Modifier.fillMaxSize(),
                 contentAlignment = Alignment.Center,
             ) {
-                if (user.imageUrl.isNotNullOrBlank() && !imageError) {
-                    AsyncImage(
-                        model = user.imageUrl,
-                        contentDescription = user.user.name,
-                        contentScale = ContentScale.Crop,
-                        onError = { imageError = true },
-                        modifier =
-                            Modifier
-                                .fillMaxSize()
-                                .clip(CircleShape),
-                    )
-                } else {
-                    // Show big bold first letter of username
-                    val firstLetter =
-                        remember(user) {
-                            user.user.let {
-                                (it.name ?: it.id.toString()).firstOrNull()?.uppercase()
-                            } ?: "?"
-                        }
-                    Text(
-                        text = firstLetter,
-                        style =
-                            if (glass) {
-                                GlassType.pageTitle.copy(fontSize = 40.sp, lineHeight = 44.sp)
-                            } else {
-                                MaterialTheme.typography.displayLarge.copy(
-                                    fontWeight = FontWeight.Bold,
-                                )
-                            },
-                        color = if (glass) Color.White else MaterialTheme.colorScheme.onSurface,
-                        textAlign = TextAlign.Center,
-                    )
-                }
+                UserIconCardImage(
+                    id = user.user.id,
+                    name = user.user.name,
+                    imageUrl = user.imageUrl,
+                    modifier = Modifier.fillMaxSize(),
+                )
             }
         }
 
-        // Username below the card
         Text(
             text = user.user.name ?: user.user.id.toString(),
-            style = if (glass) GlassType.tab else MaterialTheme.typography.bodyLarge,
+            style = MaterialTheme.typography.bodyLarge,
             fontWeight = FontWeight.Bold,
-            color = if (glass) Color.White else MaterialTheme.colorScheme.onSurface,
+            color = MaterialTheme.colorScheme.onSurface,
             textAlign = TextAlign.Center,
             maxLines = 2,
             overflow = TextOverflow.Ellipsis,
             modifier =
                 Modifier
-                    .width(cardSize)
+                    .width(Cards.serverUserCircle)
                     .padding(horizontal = 4.dp),
         )
     }
@@ -329,6 +574,8 @@ fun UserIconCardImage(
     imageUrl: String?,
     modifier: Modifier = Modifier,
     alpha: Float = 1f,
+    textColor: Color = MaterialTheme.colorScheme.onSurface,
+    letterSize: androidx.compose.ui.unit.TextUnit = 14.sp,
 ) {
     var imageError by remember { mutableStateOf(false) }
     val userColor = rememberIdColor(id, alpha)
@@ -359,9 +606,9 @@ fun UserIconCardImage(
             Text(
                 text = firstLetter,
                 style = MaterialTheme.typography.bodyLarge,
-                fontSize = 14.sp,
+                fontSize = letterSize,
                 fontWeight = FontWeight.Normal,
-                color = MaterialTheme.colorScheme.onSurface,
+                color = textColor,
                 textAlign = TextAlign.Center,
             )
         }
@@ -381,29 +628,20 @@ fun UserIconCardImagePreview() {
     }
 }
 
-/**
- * Add User card component - displays a + icon in a circle
- */
 @Composable
 private fun AddUserCard(
     onClick: () -> Unit,
     modifier: Modifier = Modifier,
 ) {
     val interactionSource = remember { MutableInteractionSource() }
-    val glass = LocalLiquidGlass.current
-
-    // Use a neutral gray color for the add user card
-    val addUserColor = if (glass) Color.White.copy(alpha = 0.12f) else MaterialTheme.colorScheme.surfaceVariant
-
-    // Card dimensions - circular card (same as user cards)
-    val cardSize = if (glass) GlassTokens.profileSize else Cards.height2x3 * 0.75f
+    val addUserColor = MaterialTheme.colorScheme.surfaceVariant
+    val cardSize = Cards.height2x3 * 0.75f
 
     Column(
         modifier = modifier,
         horizontalAlignment = Alignment.CenterHorizontally,
-        verticalArrangement = Arrangement.spacedBy(if (glass) GlassTokens.profileLabelGap else 24.dp),
+        verticalArrangement = Arrangement.spacedBy(24.dp),
     ) {
-        // Circular card with colored background
         Surface(
             onClick = onClick,
             interactionSource = interactionSource,
@@ -411,24 +649,20 @@ private fun AddUserCard(
             shape = ClickableSurfaceDefaults.shape(shape = CircleShape),
             colors =
                 ClickableSurfaceDefaults.colors(
-                    containerColor = if (glass) addUserColor else addUserColor.copy(alpha = 0.4f),
-                    contentColor = if (glass) Color.White else MaterialTheme.colorScheme.onSurface,
-                    focusedContainerColor = if (glass) Color.White else addUserColor.copy(alpha = 0.6f),
-                    focusedContentColor = if (glass) Color.Black else MaterialTheme.colorScheme.onSurface,
+                    containerColor = addUserColor.copy(alpha = 0.4f),
+                    contentColor = MaterialTheme.colorScheme.onSurface,
+                    focusedContainerColor = addUserColor.copy(alpha = 0.6f),
+                    focusedContentColor = MaterialTheme.colorScheme.onSurface,
                 ),
             border =
                 ClickableSurfaceDefaults.border(
                     focusedBorder =
                         Border(
-                            border =
-                                BorderStroke(
-                                    width = if (glass) 2.dp else 3.dp,
-                                    color = if (glass) Color.Black.copy(alpha = 0.35f) else MaterialTheme.colorScheme.onSurface,
-                                ),
+                            border = BorderStroke(3.dp, MaterialTheme.colorScheme.onSurface),
                             shape = CircleShape,
                         ),
                 ),
-            scale = ClickableSurfaceDefaults.scale(focusedScale = if (glass) 1.10f else 1.2f),
+            scale = ClickableSurfaceDefaults.scale(focusedScale = 1.2f),
         ) {
             Box(
                 modifier = Modifier.fillMaxSize(),
@@ -438,23 +672,18 @@ private fun AddUserCard(
                     imageVector = Icons.Default.Add,
                     contentDescription = stringResource(R.string.add_user),
                     tint = Color.Unspecified,
-                    modifier = Modifier.size(cardSize * 0.4f), // Size of the + icon
+                    modifier = Modifier.size(cardSize * 0.4f),
                 )
             }
         }
 
-        // "Add User" text below the card
         Text(
             text = stringResource(R.string.add_user),
             style =
-                if (glass) {
-                    GlassType.tab
-                } else {
-                    MaterialTheme.typography.bodyLarge.copy(
-                        fontWeight = androidx.compose.ui.text.font.FontWeight.Bold,
-                    )
-                },
-            color = if (glass) Color.White else MaterialTheme.colorScheme.onSurface,
+                MaterialTheme.typography.bodyLarge.copy(
+                    fontWeight = FontWeight.Bold,
+                ),
+            color = MaterialTheme.colorScheme.onSurface,
             textAlign = TextAlign.Center,
             maxLines = 2,
             overflow = TextOverflow.Ellipsis,

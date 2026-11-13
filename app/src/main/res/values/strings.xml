@@ -148,6 +148,13 @@
     <string name="select_server">Select Server</string>
     <string name="select_server_summary">Choose a server, or add a new one</string>
     <string name="select_user">Select User</string>
+    <string name="who_is_watching">Who\'s watching?</string>
+    <string name="profiles">Profiles</string>
+    <string name="profile_switch_hint">Choose a profile to continue. Watch history, My List and requests are saved per profile.</string>
+    <string name="profile_watching_now">Watching now</string>
+    <string name="profile_pin_required">PIN required</string>
+    <string name="profile_sign_in_required">Password required</string>
+    <string name="profile_tap_to_switch">Select to switch</string>
     <string name="show_debug_info">Show debug info</string>
     <string name="show_next_up_when">Show next up</string>
     <string name="show">Show</string>
@@ -582,6 +589,8 @@
     <string name="trending">Trending</string>
     <string name="upcoming_movies">Upcoming Movies</string>
     <string name="upcoming_tv">Upcoming TV Shows</string>
+    <string name="coming_soon">Coming soon</string>
+    <string name="requests_and_discovery">Requests &amp; discovery</string>
     <string name="request_4k">Request in 4K</string>
     <string name="software_decoding_av1">AV1 software decoding</string>
     <string name="upgrade_mpv_toast">MPV is now the default player except for HDR.\nYou can change this in settings.</string>
@@ -1076,6 +1085,7 @@
     <string name="tmdb_watchlist_add">Save</string>
     <string name="tmdb_watchlist_saved">In My List</string>
     <string name="for_you">For You</string>
+    <string name="your_library">Your library</string>
     <string name="for_you_reason_seed">Because you watched %1$s</string>
     <string name="for_you_reason_genre">Because you watch %1$s</string>
     <string name="for_you_reason_genres">Because you watch %1$s and %2$s</string>
@@ -1125,6 +1135,24 @@
     <string name="tonight_shelf_comfort_subtitle">Familiar favourites you have not seen in a while</string>
     <string name="tonight_empty_title">Nothing to plan yet</string>
     <string name="tonight_empty_body">Watch something once and this page will start building your evenings around the clock.</string>
+
+    <!-- On air (virtual channels) -->
+    <string name="on_air">On air</string>
+    <string name="on_air_badge">On air</string>
+    <string name="on_air_tune_in">Tune in</string>
+    <string name="on_air_up_next">Up next</string>
+    <string name="on_air_started">%1$d min in</string>
+    <string name="on_air_just_started">Just started</string>
+    <string name="on_air_loading_program">Tuning the channel…</string>
+    <string name="on_air_channel_movies">Movie Night</string>
+    <string name="on_air_channel_binge">Binge</string>
+    <string name="on_air_channel_comfort">Comfort</string>
+    <string name="on_air_channel_animation">Animation</string>
+    <string name="on_air_channel_late">Late Night</string>
+    <string name="on_air_empty_title">Nothing to broadcast yet</string>
+    <string name="on_air_empty_body">Add a few movies or shows to your library and they will start airing here, already in progress.</string>
+    <string name="on_air_error_title">The channels are off the air</string>
+    <string name="on_air_error_body">The library could not be reached. Try tuning in again.</string>
 
     <!-- Watch together (SyncPlay) -->
     <string name="watch_together">Watch together</string>

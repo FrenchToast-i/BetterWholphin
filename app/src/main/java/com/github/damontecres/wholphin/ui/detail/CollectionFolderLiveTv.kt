@@ -110,11 +110,15 @@ fun CollectionFolderLiveTv(
             val tabs =
                 remember {
                     listOf(
+                        // This fork's tuner is a sports tuner: every channel is a fixture, and
+                        // the question a viewer opens Live TV with is "what game is on?". The
+                        // schedule board answers it; the guide is the detail view, not the
+                        // landing page.
+                        TabDetails(R.string.sports),
                         TabDetails(R.string.tv_guide),
                         // A tuner can arrive before its guide does. Without these two, a fresh
                         // Live TV page is 48 hours of "No data" with nothing in it to press.
                         TabDetails(R.string.live_tv_channels),
-                        TabDetails(R.string.sports),
                         TabDetails(R.string.tv_dvr_schedule),
                     ) +
                         st.data.map {
@@ -138,16 +142,12 @@ fun CollectionFolderLiveTv(
             ) { tabIndex, tabDetails ->
                 when (tabIndex) {
                     0 -> {
-                        TvGuideGrid(
-                            preferences = preferences,
-                            Modifier
-                                .fillMaxSize()
-                                .focusRequester(tabDetails.contentFocusRequester),
-                        )
-                    }
-
-                    1 -> {
-                        LiveTvChannelsTab(
+                        LiveTvSportsTab(
+                            onClickProgram = { program ->
+                                viewModel.navigationManager.navigateTo(
+                                    Destination.Playback(itemId = program.channelId, positionMs = 0L),
+                                )
+                            },
                             onClickChannel = { channel ->
                                 viewModel.navigationManager.navigateTo(
                                     Destination.Playback(itemId = channel.id, positionMs = 0L),
@@ -158,13 +158,17 @@ fun CollectionFolderLiveTv(
                         )
                     }
 
+                    1 -> {
+                        TvGuideGrid(
+                            preferences = preferences,
+                            Modifier
+                                .fillMaxSize()
+                                .focusRequester(tabDetails.contentFocusRequester),
+                        )
+                    }
+
                     2 -> {
-                        LiveTvSportsTab(
-                            onClickProgram = { program ->
-                                viewModel.navigationManager.navigateTo(
-                                    Destination.Playback(itemId = program.channelId, positionMs = 0L),
-                                )
-                            },
+                        LiveTvChannelsTab(
                             onClickChannel = { channel ->
                                 viewModel.navigationManager.navigateTo(
                                     Destination.Playback(itemId = channel.id, positionMs = 0L),

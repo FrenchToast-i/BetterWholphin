@@ -26,7 +26,10 @@ import androidx.compose.material.icons.filled.Refresh
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
+import androidx.compose.runtime.saveable.rememberSaveable
+import androidx.compose.runtime.setValue
 import androidx.compose.runtime.withFrameNanos
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
@@ -73,6 +76,8 @@ import com.github.damontecres.wholphin.ui.components.Button
 import com.github.damontecres.wholphin.ui.components.ErrorMessage
 import com.github.damontecres.wholphin.ui.components.LoadingPage
 import com.github.damontecres.wholphin.ui.components.QuickDetails
+import com.github.damontecres.wholphin.ui.components.TabDetails
+import com.github.damontecres.wholphin.ui.components.TabRow
 import com.github.damontecres.wholphin.ui.components.TitleOrLogo
 import com.github.damontecres.wholphin.ui.components.rememberLogoUrl
 import com.github.damontecres.wholphin.ui.formatTime
@@ -107,6 +112,9 @@ import kotlin.time.Duration.Companion.minutes
 
 /** A refusal next to a title that already fits the evening: the warmest possible "not now". */
 private val LateAmber = Color(0xFFE8A33D)
+
+private const val TAB_TONIGHT = 0
+private const val TAB_ON_AIR = 1
 
 /**
  * The page's loaded state. The plan is rebuilt locally on every refusal, so a reroll is instant.
@@ -232,6 +240,11 @@ fun TonightPage(
     }
     val state by viewModel.state.collectAsStateWithLifecycle()
 
+    // Both tabs are the same evening question. On air is reachable from here rather than from
+    // the bar, which is already full of libraries, and stays one press from the page a viewer
+    // opens when they do not know what to watch.
+    var tab by rememberSaveable { mutableStateOf(TAB_TONIGHT) }
+
     when (val current = state) {
         is TonightViewModel.State.Error -> {
             ErrorMessage(current.exception?.localizedMessage, current.exception, modifier)
@@ -244,6 +257,9 @@ fun TonightPage(
         is TonightViewModel.State.Ready -> {
             TonightContent(
                 plan = current.plan,
+                tab = tab,
+                onTabChange = { tab = it },
+                onAir = { OnAirPage(Modifier.fillMaxSize()) },
                 onPlay = { item -> viewModel.navigationManager.navigateTo(Destination.Playback(item)) },
                 onDetails = { item -> viewModel.navigationManager.navigateTo(item.destination()) },
                 onNotTonight = viewModel::notTonight,
@@ -258,6 +274,9 @@ fun TonightPage(
 @Composable
 private fun TonightContent(
     plan: TonightPlan,
+    tab: Int,
+    onTabChange: (Int) -> Unit,
+    onAir: @Composable () -> Unit,
     onPlay: (BaseItem) -> Unit,
     onDetails: (BaseItem) -> Unit,
     onNotTonight: () -> Unit,
@@ -269,8 +288,8 @@ private fun TonightContent(
     val playFocus = remember { FocusRequester() }
     // The page exists to start something; landing focus on the play pill is what makes the
     // promise true one press in.
-    LaunchedEffect(plan.pick?.item?.id) {
-        if (plan.pick != null) {
+    LaunchedEffect(plan.pick?.item?.id, tab) {
+        if (tab == TAB_TONIGHT && plan.pick != null) {
             playFocus.tryRequestFocus()
             // Focus lands on the action, and the bring-into-view that follows scrolls the pick
             // card up under the heading. The card is the first thing in the list, so resetting
@@ -286,6 +305,23 @@ private fun TonightContent(
         // than scrolling to its item, so a heading inside the list was left above the viewport
         // the first time focus landed on the play pill — the page opened without its own title.
         TonightHeader(plan.window, Modifier.padding(bottom = 14.dp))
+        val tabs =
+            remember {
+                listOf(
+                    TabDetails(R.string.tonight),
+                    TabDetails(R.string.on_air),
+                )
+            }
+        TabRow(
+            selectedTabIndex = tab,
+            tabs = tabs,
+            onClick = onTabChange,
+            modifier = Modifier.fillMaxWidth().padding(bottom = 12.dp),
+        )
+        if (tab == TAB_ON_AIR) {
+            Box(Modifier.weight(1f).fillMaxWidth()) { onAir() }
+            return@Column
+        }
         LazyColumn(
             state = listState,
             verticalArrangement = Arrangement.spacedBy(18.dp),
