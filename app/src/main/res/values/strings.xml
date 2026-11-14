@@ -533,6 +533,12 @@
     <string name="live_tv_sports_today">Today</string>
     <string name="live_tv_sports_tomorrow">Tomorrow</string>
     <string name="live_tv_sports_summary_live">%1$d live · %2$d coming up</string>
+    <string name="live_tv_header_live">%1$d live now</string>
+    <string name="live_tv_header_quiet">No games on now</string>
+    <string name="live_tv_header_next">Next %1$s</string>
+    <string name="live_tv_filter_sports">Sports only</string>
+    <string name="live_tv_filter_empty">No channels match these filters</string>
+    <string name="live_tv_filter_empty_sports">No favourite channels have games on</string>
     <string name="live_tv_sports_summary_next">%1$d coming up</string>
     <string name="live_tv_sports_watch">Watch</string>
     <string name="live_tv_sports_no_games_now">No game is on right now</string>
@@ -573,6 +579,8 @@
     <string name="convert_dovi_profile_7_summary">Rewrites dual-layer Profile 7 into single-layer Profile 8.1 before the decoder and direct plays it, for devices whose decoder lists Profile 8 but not Profile 7</string>
 
     <string name="discover">Discover</string>
+    <string name="discover_seerr_subtitle">Trending, new releases and what is coming next</string>
+    <string name="browse_by_genre">Browse by genre</string>
     <string name="request">Request</string>
     <string name="pending">Pending</string>
     <string name="seerr_integration">Seerr integration</string>
@@ -1173,4 +1181,14 @@
     <string name="watch_party_ended">The watch party ended</string>
     <string name="watch_party_refresh">Refresh</string>
     <string name="watch_party_room_number">%1$d of %2$d</string>
+    <string name="live_tv_filter_live">Live now</string>
+    <string name="live_tv_filter_live_empty">No games are on right now</string>
+    <string name="settings_group_profile">Who is signed in, and how their pages are arranged.</string>
+    <string name="settings_group_interface">Theme, glass, and what the top bar carries.</string>
+    <string name="settings_group_playback">Skips, subtitles, and how playback behaves.</string>
+    <string name="settings_group_next_up">What starts after an episode ends.</string>
+    <string name="settings_group_tonight">Bedtime and what the television does when it is idle.</string>
+    <string name="settings_group_discovery">Requests and artwork for titles you do not own yet.</string>
+    <string name="settings_group_about">Version and updates.</string>
+    <string name="settings_group_more">Player, codec and diagnostic settings.</string>
 </resources>

@@ -8,6 +8,7 @@ import androidx.compose.animation.slideInHorizontally
 import androidx.compose.animation.slideOutHorizontally
 import androidx.compose.foundation.Image
 import androidx.compose.foundation.background
+import androidx.compose.foundation.clickable
 import androidx.compose.foundation.interaction.MutableInteractionSource
 import androidx.compose.foundation.interaction.collectIsFocusedAsState
 import androidx.compose.foundation.text.KeyboardOptions
@@ -24,6 +25,7 @@ import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.lazy.LazyColumn
+import androidx.compose.foundation.lazy.itemsIndexed
 import androidx.compose.foundation.lazy.rememberLazyListState
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
@@ -37,6 +39,7 @@ import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
+import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.focus.FocusRequester
 import androidx.compose.ui.focus.focusRequester
 import androidx.compose.ui.platform.LocalContext
@@ -122,7 +125,18 @@ fun PreferencesContent(
     val lastFocusRequester = remember { FocusRequester() }
 
     var focusedIndex by rememberSaveable { mutableStateOf(Pair(0, 0)) }
+    // Glass settings are a two-pane sheet: a rail of sections on the left, the rows of the
+    // chosen section on the right. The single long column made the viewer scroll past nine
+    // groups to reach the one they change; a native television settings screen lets them pick a
+    // section and then work inside it. Classic keeps the single list it has always had.
+    var selectedGroup by rememberSaveable { mutableStateOf(0) }
+    val railFocusRequester = remember { FocusRequester() }
     val state = rememberLazyListState()
+    // Each section starts at its own top. Without this, choosing a section after scrolling
+    // the previous one dropped the viewer into the middle of a list they had not seen.
+    LaunchedEffect(selectedGroup) {
+        state.scrollToItem(0)
+    }
     var preferences by remember { mutableStateOf(initialPreferences) }
     val currentUser by viewModel.currentUser.collectAsState()
     val accountPreferences by viewModel.accountPreferences.collectAsState()
@@ -243,9 +257,18 @@ fun PreferencesContent(
         modifier = modifier,
     ) {
         LaunchedEffect(Unit) {
-            focusRequester.tryRequestFocus()
+            // Focus starts on the rail so the viewer's first press can choose a section. On the
+            // classic layout there is no rail, so the request falls through to the list.
+            if (!railFocusRequester.tryRequestFocus()) {
+                focusRequester.tryRequestFocus()
+            }
         }
         val glass = LocalLiquidGlass.current
+        // The update offer and the server warning describe the build, not whichever setting the
+        // viewer is editing. On the two-pane sheet they sit at the top of About; on the single
+        // list they stay above the first group, where the version is about to be shown anyway.
+        val aboutGroupIndex = remember(prefList) { prefList.indexOfFirst { it.title == R.string.about } }
+        val atAbout = !glass || selectedGroup == aboutGroupIndex
         Column(
             // In glass mode the sheet itself is the surface, so painting a theme colour here
             // would cover it with an opaque slab.
@@ -282,6 +305,16 @@ fun PreferencesContent(
                         style = GlassType.settingsSummary,
                         color = Color.White.copy(alpha = 0.48f),
                     )
+                    // The rail names sections in one word each; this line says what the chosen
+                    // one is for, so a viewer does not have to open three of them to learn
+                    // where the row they want lives.
+                    prefList.getOrNull(selectedGroup)?.description?.let { description ->
+                        Text(
+                            text = stringResource(description),
+                            style = GlassType.settingsSummary,
+                            color = Color.White.copy(alpha = 0.72f),
+                        )
+                    }
                     Spacer(Modifier.height(12.dp))
                     Box(
                         modifier =
@@ -303,13 +336,22 @@ fun PreferencesContent(
                             .padding(top = 8.dp, bottom = 8.dp),
                 )
             }
+            Row(modifier = Modifier.weight(1f).fillMaxWidth()) {
+                if (glass) {
+                    SettingsRail(
+                        groups = prefList,
+                        selected = selectedGroup,
+                        onSelect = { selectedGroup = it },
+                        focusRequester = railFocusRequester,
+                    )
+                }
             LazyColumn(
                 state = state,
                 horizontalAlignment = Alignment.Start,
                 verticalArrangement = Arrangement.spacedBy(0.dp),
                 contentPadding =
                     if (glass) {
-                        PaddingValues(start = 18.dp, end = 22.dp, top = 4.dp, bottom = 24.dp)
+                        PaddingValues(start = 4.dp, end = 22.dp, top = 4.dp, bottom = 24.dp)
                     } else {
                         PaddingValues(16.dp)
                     },
@@ -317,9 +359,9 @@ fun PreferencesContent(
                 // title. `fillMaxSize` measured it against the whole column, so the sheet's last
                 // rows were painted past the pane's rounded bottom and cut off by the screen
                 // edge — a settings page that looks like it is missing its final switch.
-                modifier = Modifier.weight(1f).fillMaxWidth(),
+                modifier = Modifier.weight(1f).fillMaxHeight(),
             ) {
-                serverVersionMessage?.let { message ->
+                if (atAbout) serverVersionMessage?.let { message ->
                     item {
                         // A server warning is not a setting. It gets its own tinted card above
                         // the list instead of sitting in the group as though it were a row the
@@ -349,7 +391,7 @@ fun PreferencesContent(
                         }
                     }
                 }
-                if (showUpdate) {
+                if (showUpdate && atAbout) {
                     item {
                         val interactionSource = remember { MutableInteractionSource() }
                         val focused = interactionSource.collectIsFocusedAsState().value
@@ -387,6 +429,10 @@ fun PreferencesContent(
                 }
 
                 prefList.forEachIndexed { groupIndex, group ->
+                    // In the two-pane sheet the rail is the group heading, so only the chosen
+                    // section's rows are composed. Classic still draws every group under its own
+                    // caption, one list.
+                    if (glass && groupIndex != selectedGroup) return@forEachIndexed
                     val headerContent: @Composable () -> Unit = {
                         Text(
                             text = stringResource(group.title).uppercase(),
@@ -418,7 +464,9 @@ fun PreferencesContent(
                     // the sheet's header wash is translucent, the row's title stayed readable
                     // underneath: two labels drawn on top of each other at every group boundary.
                     // The group name scrolls with its rows instead; the sheet title stays pinned.
-                    item(key = "group_$groupIndex") { headerContent() }
+                    if (!glass) {
+                        item(key = "group_$groupIndex") { headerContent() }
+                    }
                     val groupPreferences =
                         group.preferences +
                             group.conditionalPreferences
@@ -427,9 +475,10 @@ fun PreferencesContent(
                                 .flatten()
                     groupPreferences.forEachIndexed { prefIndex, pref ->
                         pref as AppPreference<AppPreferences, Any>
-                        val isFirst = groupIndex == 0 && prefIndex == 0 && !showUpdate
+                        val isFirst = (glass || groupIndex == 0) && prefIndex == 0 && !showUpdate
                         val isLast =
-                            groupIndex == prefList.lastIndex && prefIndex == groupPreferences.lastIndex
+                            (glass || groupIndex == prefList.lastIndex) &&
+                                prefIndex == groupPreferences.lastIndex
                         item(key = "pref_${groupIndex}_$prefIndex") {
                             val interactionSource = remember { MutableInteractionSource() }
                             val focused = interactionSource.collectIsFocusedAsState().value
@@ -895,6 +944,7 @@ fun PreferencesContent(
                     }
                 }
             }
+            }
         }
         if (showPinFlow && currentUser != null) {
             currentUser?.let { user ->
@@ -1011,7 +1061,9 @@ fun PreferencesPage(
                         // stage: wide enough for a title, a summary and a switch on one line,
                         // centred so the artwork balances on both sides instead of being pushed
                         // into a narrow strip on the left.
-                        .fillMaxWidth(if (liquidGlass) 0.74f else 0.4f)
+                        // Two panes need more room than one list did: the rail is fixed at
+                        // ~200dp, so at 74% the preference rows were squeezed to a phone's width.
+                        .fillMaxWidth(if (liquidGlass) 0.84f else 0.4f)
                         .fillMaxHeight()
                         .align(if (liquidGlass) Alignment.Center else Alignment.TopEnd)
                 if (liquidGlass) {
@@ -1053,3 +1105,63 @@ data class CacheUsage(
     val imageMemoryMax: Long,
     val imageDiskUsed: Long,
 )
+
+/**
+ * The left rail of the two-pane settings sheet.
+ *
+ * It is a list of sections, not another menu: the selected section holds a tint while the rest
+ * stay quiet, and focus is the same white-on-glass signal the rest of the sheet uses. The rail
+ * never scrolls on a full settings page (ten short labels), so the viewer can always see which
+ * sections exist — the single long column could not.
+ */
+@Composable
+private fun SettingsRail(
+    groups: List<PreferenceGroup<AppPreferences>>,
+    selected: Int,
+    onSelect: (Int) -> Unit,
+    modifier: Modifier = Modifier,
+    focusRequester: FocusRequester? = null,
+) {
+    LazyColumn(
+        verticalArrangement = Arrangement.spacedBy(2.dp),
+        contentPadding = PaddingValues(start = 20.dp, end = 10.dp, top = 4.dp, bottom = 24.dp),
+        modifier =
+            modifier
+                .width(198.dp)
+                .fillMaxHeight(),
+    ) {
+        itemsIndexed(groups) { index, group ->
+            val interactionSource = remember { MutableInteractionSource() }
+            val focused by interactionSource.collectIsFocusedAsState()
+            val active = index == selected
+            Text(
+                text = stringResource(group.title),
+                style = GlassType.settingsTitle,
+                color = if (active) Color.White else Color.White.copy(alpha = 0.62f),
+                maxLines = 1,
+                overflow = TextOverflow.Ellipsis,
+                modifier =
+                    Modifier
+                        .fillMaxWidth()
+                        .clip(RoundedCornerShape(GlassTokens.rowRadius))
+                        .background(
+                            when {
+                                active -> Color.White.copy(alpha = 0.14f)
+                                focused -> Color.White.copy(alpha = 0.09f)
+                                else -> Color.Transparent
+                            },
+                        ).then(
+                            if (index == 0 && focusRequester != null) {
+                                Modifier.focusRequester(focusRequester)
+                            } else {
+                                Modifier
+                            },
+                        ).clickable(
+                            interactionSource = interactionSource,
+                            indication = null,
+                        ) { onSelect(index) }
+                        .padding(horizontal = 14.dp, vertical = 11.dp),
+            )
+        }
+    }
+}

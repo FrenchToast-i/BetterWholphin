@@ -65,6 +65,7 @@ import com.github.damontecres.wholphin.ui.nav.Destination
 import com.github.damontecres.wholphin.ui.playback.scale
 import com.github.damontecres.wholphin.ui.rememberInt
 import com.github.damontecres.wholphin.ui.showToast
+import com.github.damontecres.wholphin.ui.theme.LocalLiquidGlass
 import com.github.damontecres.wholphin.ui.toServerString
 import com.github.damontecres.wholphin.ui.tryRequestFocus
 import com.github.damontecres.wholphin.ui.util.goToRandom
@@ -1040,7 +1041,13 @@ fun CollectionFolderViewContent(
                     val pager = remember(state.items) { state.items.successValue }
 
                     val focusedItem = pager?.getOrNull(position)
-                    if (state.viewOptions.showBackdrop) {
+                    // Follow focus with the artwork on every grid, not only where the per-library
+                    // "show backdrop" switch was turned on. That switch defaults to off, so every
+                    // library tab (Movies, Shows, music) kept the shell's last backdrop while the
+                    // D-pad moved across its posters — the one place the filing-cabinet effect is
+                    // most visible. The switch still controls the classic layouts, where a
+                    // backdrop behind a mostly-opaque page was a per-library taste question.
+                    if (LocalLiquidGlass.current || state.viewOptions.showBackdrop) {
                         LaunchedEffect(focusedItem) {
                             focusedItem?.let(viewActions::updateBackdrop)
                         }

@@ -71,6 +71,7 @@ fun LiveTvChannelsTab(
     onClickChannel: (TvChannel) -> Unit,
     modifier: Modifier = Modifier,
     focusRequester: FocusRequester? = null,
+    channelFilter: (TvChannel) -> Boolean = { true },
     viewModel: LiveTvViewModel = hiltViewModel(),
 ) {
     val state by viewModel.state.collectAsState()
@@ -87,9 +88,18 @@ fun LiveTvChannelsTab(
         }
 
         LoadingState.Success -> {
-            if (state.channels.isEmpty()) {
+            val channels =
+                remember(state.channels, channelFilter) {
+                    state.channels.filter(channelFilter)
+                }
+            if (channels.isEmpty()) {
                 NoChannelsMessage(
-                    message = stringResource(R.string.live_tv_no_channels_message),
+                    message =
+                        if (state.channels.isEmpty()) {
+                            stringResource(R.string.live_tv_no_channels_message)
+                        } else {
+                            stringResource(R.string.live_tv_filter_empty)
+                        },
                     modifier = modifier,
                 )
             } else {
@@ -106,13 +116,13 @@ fun LiveTvChannelsTab(
                     }
                 Column(modifier = modifier) {
                     Text(
-                        text = stringResource(R.string.live_tv_channel_count, state.channels.size),
+                        text = stringResource(R.string.live_tv_channel_count, channels.size),
                         style = MaterialTheme.typography.bodyMedium,
                         color = copyColor(0.72f),
                         modifier = Modifier.padding(start = pageStartPadding(), bottom = 12.dp),
                     )
                     TvChannelGrid(
-                        channels = state.channels,
+                        channels = channels,
                         onClickChannel = onClickChannel,
                         modifier = Modifier.fillMaxSize(),
                         focusRequester = focusRequester,

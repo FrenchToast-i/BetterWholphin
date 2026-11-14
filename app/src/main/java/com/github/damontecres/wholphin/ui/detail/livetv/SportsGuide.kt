@@ -90,6 +90,10 @@ fun LiveTvSportsTab(
     onClickChannel: (TvChannel) -> Unit,
     modifier: Modifier = Modifier,
     focusRequester: FocusRequester? = null,
+    /** The Live TV band's favourites filter, applied to the fixtures as well as the channels. */
+    favoritesOnly: Boolean = false,
+    /** The Live TV band's "live now" filter: only the fixtures airing at this moment. */
+    liveOnly: Boolean = false,
     viewModel: LiveTvViewModel = hiltViewModel(),
 ) {
     val state by viewModel.state.collectAsState()
@@ -110,13 +114,39 @@ fun LiveTvSportsTab(
 
         LoadingState.Success -> {
             val now = rememberTickingNow()
-            val sports =
+            val channelsById = remember(state.channels) { state.channels.associateBy { it.id } }
+            val allSports =
                 remember(state.programs.programs) {
                     state.programs.programs
                         .filter { it.category == ProgramCategory.SPORTS && !it.isFake }
                         .sortedBy { it.start }
                 }
-            if (sports.isEmpty()) {
+            val sports =
+                remember(allSports, favoritesOnly, liveOnly, channelsById, now) {
+                    allSports
+                        .filter { !favoritesOnly || channelsById[it.channelId]?.favorite == true }
+                        .filter { !liveOnly || (it.start <= now && now.isBefore(it.end)) }
+                }
+            if (sports.isEmpty() && liveOnly && allSports.isNotEmpty()) {
+                // "Live now" with nothing on is an honest answer, not a missing guide.
+                Box(modifier.fillMaxSize(), contentAlignment = Alignment.Center) {
+                    Text(
+                        text = stringResource(R.string.live_tv_filter_live_empty),
+                        style = MaterialTheme.typography.bodyLarge,
+                        color = copyColor(0.75f),
+                    )
+                }
+            } else if (sports.isEmpty() && favoritesOnly && allSports.isNotEmpty()) {
+                // There is sport, but none of it is on a favourite channel. Saying so is the
+                // difference between a filter that worked and a page that lost its data.
+                Box(modifier.fillMaxSize(), contentAlignment = Alignment.Center) {
+                    Text(
+                        text = stringResource(R.string.live_tv_filter_empty_sports),
+                        style = MaterialTheme.typography.bodyLarge,
+                        color = copyColor(0.75f),
+                    )
+                }
+            } else if (sports.isEmpty()) {
                 SportsWithoutListings(
                     channels = state.channels,
                     // Two different answers: a guide with no listings at all is a tuner that has
@@ -131,7 +161,6 @@ fun LiveTvSportsTab(
             } else {
                 val onNow = remember(sports, now) { sports.filter { it.start <= now && now.isBefore(it.end) } }
                 val later = remember(sports, now) { sports.filter { it.start.isAfter(now) } }
-                val channelsById = remember(state.channels) { state.channels.associateBy { it.id } }
                 val featured = onNow.firstOrNull() ?: later.firstOrNull()
                 val featureIsLive = featured != null && onNow.any { it.id == featured.id }
                 // The feature card already *is* the first live game, so the shelf underneath
@@ -154,12 +183,6 @@ fun LiveTvSportsTab(
                     contentPadding = PaddingValues(bottom = 32.dp),
                     modifier = modifier,
                 ) {
-                    item(key = "header") {
-                        SportsHeader(
-                            liveCount = onNow.size,
-                            upcomingCount = later.size,
-                        )
-                    }
                     if (featured != null) {
                         item(key = "feature") {
                             SportsFeature(
@@ -409,6 +432,37 @@ private fun SportsFeature(
                                 overflow = TextOverflow.Ellipsis,
                             )
                         }
+                }
+                // A live game is a length, not a state: the thin rule under the billboard is
+                // the only thing on the page that says how far through the fixture the viewer
+                // would be joining. It matches the progress rule the guide draws in its cells.
+                if (live) {
+                    val totalMs =
+                        java.time.Duration
+                            .between(program.start, program.end)
+                            .toMillis()
+                            .coerceAtLeast(1)
+                    val elapsedMs =
+                        java.time.Duration
+                            .between(program.start, now)
+                            .toMillis()
+                            .coerceIn(0, totalMs)
+                    Box(
+                        modifier =
+                            Modifier
+                                .padding(top = 6.dp)
+                                .fillMaxWidth()
+                                .height(3.dp)
+                                .background(Color.White.copy(alpha = 0.22f), RoundedCornerShape(2.dp)),
+                    ) {
+                        Box(
+                            modifier =
+                                Modifier
+                                    .fillMaxWidth(elapsedMs.toFloat() / totalMs)
+                                    .height(3.dp)
+                                    .background(LiveRed, RoundedCornerShape(2.dp)),
+                        )
+                    }
                 }
             }
         }

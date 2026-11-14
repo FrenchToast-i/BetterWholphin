@@ -1322,17 +1322,34 @@ sealed interface AppPreference<Pref, T> {
 val basicPreferences =
     listOf(
         PreferenceGroup(
-            title = R.string.ui_interface,
+            // Who you are, before how the app looks. Every row here applies to this profile and
+            // nothing else, which is why signing in automatically and the home layout belong
+            // together rather than sitting in two different sections.
+            title = R.string.profile,
+            description = R.string.settings_group_profile,
             preferences =
                 listOf(
+                    AppPreference.UserProfileSettings,
+                    AppPreference.ProtectProfilePreference,
                     AppPreference.SignInAuto,
-                    AppPreference.RememberSelectedTab,
-                    AppPreference.PlayThemeMusic,
-                    AppPreference.SubtitleStyle,
+                    AppPreference.UserInterfaceLanguage,
+                    AppPreference.CustomizeHome,
+                    AppPreference.UserPinnedNavDrawerItems,
+                ),
+        ),
+        PreferenceGroup(
+            title = R.string.ui_interface,
+            description = R.string.settings_group_interface,
+            preferences =
+                listOf(
                     AppPreference.ThemeColors,
                     AppPreference.LiquidGlass,
-                    AppPreference.Bedtime,
-                    AppPreference.ScreensaverSettings,
+                    // These three shape every page, so they belong where a viewer looking for
+                    // "make it look right" will find them, not behind Advanced.
+                    AppPreference.ShowLogos,
+                    AppPreference.BackdropStylePref,
+                    AppPreference.DisplayTogglesPref,
+                    AppPreference.RememberSelectedTab,
                 ),
             conditionalPreferences =
                 listOf(
@@ -1352,15 +1369,19 @@ val basicPreferences =
         ),
         PreferenceGroup(
             title = R.string.playback,
+            description = R.string.settings_group_playback,
             preferences =
                 listOf(
                     AppPreference.SkipForward,
                     AppPreference.SkipBack,
                     AppPreference.SkipBackOnResume,
+                    AppPreference.PlayThemeMusic,
+                    AppPreference.SubtitleStyle,
                 ),
         ),
         PreferenceGroup(
             title = R.string.next_up,
+            description = R.string.settings_group_next_up,
             preferences =
                 listOf(
                     AppPreference.ShowNextUpTiming,
@@ -1370,28 +1391,21 @@ val basicPreferences =
                 ),
         ),
         PreferenceGroup(
-            title = R.string.profile_specific_settings,
+            // The evening's shape is its own section: bedtime and the idle screensaver are one
+            // idea (what happens when nobody is watching), and neither is a playback setting.
+            title = R.string.tonight,
+            description = R.string.settings_group_tonight,
             preferences =
                 listOf(
-                    AppPreference.ProtectProfilePreference,
-                    AppPreference.CustomizeHome,
-                    AppPreference.UserPinnedNavDrawerItems,
-                    AppPreference.UserInterfaceLanguage,
-                    AppPreference.UserProfileSettings,
+                    AppPreference.Bedtime,
+                    AppPreference.ScreensaverSettings,
                 ),
         ),
-        PreferenceGroup(
-            title = R.string.about,
-            preferences =
-                buildList {
-                    add(AppPreference.InstalledVersion)
-                    if (UpdateChecker.ACTIVE) {
-                        add(AppPreference.Update)
-                    }
-                },
-        ),
+        // Discovery is in the name: Seerr and TMDB are the only rows that reach outside the
+        // server, and they sit below everything that plays what is already here.
         PreferenceGroup(
             title = R.string.discovery,
+            description = R.string.settings_group_discovery,
             preferences =
                 buildList {
                     if (BuildConfig.DISCOVER_ENABLED) {
@@ -1402,7 +1416,16 @@ val basicPreferences =
                 },
         ),
         PreferenceGroup(
+            title = R.string.about,
+            description = R.string.settings_group_about,
+            preferences =
+                // The install card above the group is the offer; a second Update row inside it
+                // would be the same action twice on one screen.
+                listOf(AppPreference.InstalledVersion),
+        ),
+        PreferenceGroup(
             title = R.string.more,
+            description = R.string.settings_group_more,
             preferences =
                 listOf(
                     AppPreference.AdvancedSettings,
@@ -1484,10 +1507,7 @@ val advancedPreferences =
                 preferences =
                     listOf(
                         AppPreference.ShowClock,
-                        AppPreference.BackdropStylePref,
-                        AppPreference.ShowLogos,
                         AppPreference.ManageMedia,
-                        AppPreference.DisplayTogglesPref,
                         // Temporarily disabled, see https://github.com/damontecres/Wholphin/pull/127#issuecomment-3478058418
 //                    AppPreference.NavDrawerSwitchOnFocus,
                         AppPreference.SlideshowDuration,

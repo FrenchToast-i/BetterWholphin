@@ -80,6 +80,8 @@ fun TvGuideGrid(
     preferences: UserPreferences,
     modifier: Modifier = Modifier,
     viewModel: LiveTvViewModel = hiltViewModel(),
+    /** The Live TV filters (favourites, sports channels) in front of the whole tuner. */
+    channelFilter: (TvChannel) -> Boolean = { true },
 ) {
     val scope = rememberCoroutineScope()
     val state by viewModel.state.collectAsState()
@@ -123,15 +125,19 @@ fun TvGuideGrid(
             // the rest of the list has no schedule at all. Drawing all 34 channels turned twelve
             // games into thirty rows of "No data" and buried the guide. Channels with nothing to
             // say are left to the Channels tab, which is the view built for browsing them.
+            val filteredChannels =
+                remember(state.channels, channelFilter) {
+                    state.channels.filter(channelFilter)
+                }
             val guideChannels =
-                remember(state.channels, state.programs) {
+                remember(filteredChannels, state.programs) {
                     val listed =
-                        state.channels.filter { channel ->
+                        filteredChannels.filter { channel ->
                             state.programs.programsByChannel[channel.id].orEmpty().any { !it.isFake }
                         }
                     // No listings anywhere is not an empty guide: the fallback below draws the
                     // channels themselves, and hiding them would leave a blank page.
-                    listed.ifEmpty { state.channels }
+                    listed.ifEmpty { filteredChannels }
                 }
             // A tuner with no listings is not a broken guide: it is a tuner that has not been
             // refreshed yet. Forty-eight hours of "No data" per channel is worse than a sentence,
@@ -161,7 +167,14 @@ fun TvGuideGrid(
                 modifier = modifier,
             ) {
                 if (guideChannels.isEmpty()) {
-                    ErrorMessage("Live TV is enabled, but no channels were found.", null)
+                    ErrorMessage(
+                        if (state.channels.isEmpty()) {
+                            "Live TV is enabled, but no channels were found."
+                        } else {
+                            stringResource(R.string.live_tv_filter_empty)
+                        },
+                        null,
+                    )
                 } else {
                     AnimatedVisibility(
                         // A cell between games has nothing to headline. Keeping the slot open

@@ -106,42 +106,16 @@ fun HomePage(
     modifier: Modifier = Modifier,
     viewModel: HomeViewModel = hiltViewModel(),
     playlistViewModel: AddPlaylistViewModel = hiltViewModel(),
-    tmdbHomeViewModel: TmdbHomeViewModel = hiltViewModel(),
-    tmdbTopTenViewModel: TmdbTopTenViewModel = hiltViewModel(),
-    seerrRequestsViewModel: SeerrRequestsViewModel = hiltViewModel(),
-    forYouViewModel: ForYouViewModel = hiltViewModel(),
 ) {
     val context = LocalContext.current
     LifecycleStartEffect(Unit) {
         viewModel.init()
-        // Both rails re-seed every time Home returns to the front: after an episode they should
-        // follow that show, not the one that was running when the app started.
-        forYouViewModel.refresh()
-        tmdbHomeViewModel.refresh()
-        tmdbTopTenViewModel.refresh()
-        // A profile with Seerr switched off has no request identity to show, so the rail stays
-        // away entirely rather than reporting that the household's server is unreachable.
-        if (preferences.seerrEnabled) seerrRequestsViewModel.refresh()
         onStopOrDispose { }
     }
     val state by viewModel.state.collectAsState()
-    val tmdbHome by tmdbHomeViewModel.state.collectAsStateWithLifecycle()
-    val tmdbTopTen by tmdbTopTenViewModel.state.collectAsStateWithLifecycle()
-    val seerrRequests by seerrRequestsViewModel.state.collectAsStateWithLifecycle()
-    val forYou by forYouViewModel.state.collectAsStateWithLifecycle()
     val loading = state.loadingState
     val refreshing = state.refreshState
     val homeRows = state.homeRows
-    // The first configured row that is not a watch row. "Your library" is placed here, so the
-    // sections describe the page the viewer arranged rather than a fixed guess.
-    val librarySectionStart =
-        remember(state.settings.rows) {
-            state.settings.rows.indexOfFirst { row ->
-                row.config !is HomeRowConfig.ContinueWatching &&
-                    row.config !is HomeRowConfig.NextUp &&
-                    row.config !is HomeRowConfig.ContinueWatchingCombined
-            }
-        }
 
     when (val state = loading) {
         is LoadingState.Error -> {
@@ -244,25 +218,6 @@ fun HomePage(
                     }
                 }
 
-            val showLogo = preferences.appPreferences.interfacePreferences.showLogos
-            // Everything already drawn in a row above the shelves. For You is not allowed to
-            // repeat a poster from the watch row: the same show twice on one screen reads as a
-            // duplicate, not as a recommendation. Series ids are included because a resume row
-            // holds episodes while a recommendation holds the series.
-            val shelfExcludedIds =
-                remember(homeRows) {
-                    buildSet {
-                        homeRows.forEach { row ->
-                            if (row is HomeRowLoadingState.Success) {
-                                row.items.forEach { item ->
-                                    item ?: return@forEach
-                                    add(item.id)
-                                    item.data.seriesId?.let(::add)
-                                }
-                            }
-                        }
-                    }
-                }
             HomePageContent(
                 homeRows = homeRows,
                 position = position,
@@ -273,91 +228,13 @@ fun HomePage(
                 loadingState = refreshing,
                 showClock = preferences.appPreferences.interfacePreferences.showClock,
                 onUpdateBackdrop = viewModel::updateBackdrop,
-                showLogo = showLogo,
+                showLogo = preferences.appPreferences.interfacePreferences.showLogos,
                 showViewMore = true,
                 onClickViewMore = onClickViewMore,
-                // Discovery sits after the watch row it follows, so the two read as one answer:
-                // "here is where you are, here is what is like it". Saved titles come first: the
-                // viewer put them there on purpose, so they outrank a suggestion. For You sits
-                // between them because it is the one shelf whose every card is already playable.
-                shelfSectionLabel = stringResource(R.string.for_you),
-                librarySectionLabel = stringResource(R.string.your_library),
-                librarySectionStart = librarySectionStart,
-                // Personal, playable rails stay together under "For you"; requests and the
-                // Top 10 are the end of the page, after the viewer's own library.
-                shelves =
-                    listOf(
-                        { reportFocus ->
-                            WatchlistShelf(
-                                onFindInLibrary = { item ->
-                                    viewModel.navigationManager.navigateTo(Destination.Search(item.displayTitle))
-                                },
-                            )
-                        },
-                        { reportFocus ->
-                            ForYouShelf(
-                                state = forYou,
-                                excludeIds = shelfExcludedIds,
-                                onClickItem = { item ->
-                                    viewModel.navigationManager.navigateTo(item.destination())
-                                },
-                                onPlayItem = { item ->
-                                    viewModel.navigationManager.navigateTo(Destination.Playback(item))
-                                },
-                                onFocusItem = reportFocus,
-                            )
-                        },
-                        { reportFocus ->
-                            TmdbHomeShelf(
-                                state = tmdbHome,
-                                onFindInLibrary = { item ->
-                                    viewModel.navigationManager.navigateTo(Destination.Search(item.displayTitle))
-                                },
-                                onFocusItem = tmdbHomeViewModel::submitBackdrop,
-                                onFocusSeed = reportFocus,
-                            )
-                        },
-                    ),
-                trailingShelves =
-                    listOf(
-                        { _ ->
-                            if (preferences.seerrEnabled) {
-                                SeerrRequestShelf(
-                                    state = seerrRequests,
-                                    onFindInLibrary = { item ->
-                                        viewModel.navigationManager.navigateTo(Destination.Search(item.displayTitle))
-                                    },
-                                    onFocusItem = seerrRequestsViewModel::submitBackdrop,
-                                )
-                            }
-                        },
-                        { _ ->
-                            TmdbTopTenShelf(
-                                state = tmdbTopTen,
-                                onFindInLibrary = { item ->
-                                    viewModel.navigationManager.navigateTo(Destination.Search(item.displayTitle))
-                                },
-                                onFocusItem = tmdbTopTenViewModel::submitBackdrop,
-                            )
-                        },
-                    ),
-                headerComposable =
-                    if (LocalLiquidGlass.current) {
-                        { focusedItem ->
-                            GlassHomeHeader(
-                                item = focusedItem,
-                                showLogo = showLogo,
-                                onPlay = { item ->
-                                    viewModel.navigationManager.navigateTo(Destination.Playback(item))
-                                },
-                                onDetails = { item ->
-                                    viewModel.navigationManager.navigateTo(item.destination())
-                                },
-                            )
-                        }
-                    } else {
-                        null
-                    },
+                // The home page is a stack of the viewer's own rows. Other callers (a series'
+                // recommendations, the home settings preview) still want the focused-item
+                // header, so the page opts out rather than the component dropping it.
+                showHeader = false,
                 modifier = modifier,
             )
             overviewDialog?.let { info ->
@@ -456,6 +333,12 @@ fun HomePageContent(
     onUpdateBackdrop: (BaseItem) -> Unit,
     showLogo: Boolean,
     showViewMore: Boolean,
+    /**
+     * Whether the page draws its fixed header above the rows. Home sets this to false: the
+     * focused card's artwork is already the backdrop, and the 200dp pane left a 540dp television
+     * showing exactly one row of its own library.
+     */
+    showHeader: Boolean = true,
     modifier: Modifier = Modifier,
     loadingState: LoadingState? = null,
     listState: LazyListState = rememberLazyListState(),
@@ -590,20 +473,6 @@ fun HomePageContent(
     LaunchedEffect(onUpdateBackdrop, focusedItem) {
         focusedItem?.let { onUpdateBackdrop.invoke(it) }
     }
-    val header: @Composable (focusedItem: BaseItem?) -> Unit =
-        headerComposable ?: { focusedItem ->
-            HomePageHeader(
-                item = focusedItem,
-                showLogo = showLogo,
-                modifier =
-                    if (LocalLiquidGlass.current) {
-                        HeaderUtils.glassModifier
-                    } else {
-                        HeaderUtils.modifier
-                    },
-            )
-        }
-
     Box(modifier = modifier) {
         Column(
             modifier =
@@ -614,7 +483,22 @@ fun HomePageContent(
                         }
                     }.fillMaxSize(),
         ) {
-            header.invoke(focusedItem)
+            if (showHeader) {
+                val header: @Composable (BaseItem?) -> Unit =
+                    headerComposable ?: { focusedItem ->
+                        HomePageHeader(
+                            item = focusedItem,
+                            showLogo = showLogo,
+                            modifier =
+                                if (LocalLiquidGlass.current) {
+                                    HeaderUtils.glassModifier
+                                } else {
+                                    HeaderUtils.modifier
+                                },
+                        )
+                    }
+                header.invoke(focusedItem)
+            }
 
             val density = LocalDensity.current
             val spaceAbovePx =

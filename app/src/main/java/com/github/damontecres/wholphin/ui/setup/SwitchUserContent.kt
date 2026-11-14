@@ -39,6 +39,7 @@ import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import androidx.compose.ui.window.DialogProperties
 import androidx.hilt.lifecycle.viewmodel.compose.hiltViewModel
+import androidx.tv.material3.LocalContentColor
 import androidx.tv.material3.MaterialTheme
 import androidx.tv.material3.Text
 import com.github.damontecres.wholphin.R
@@ -137,16 +138,18 @@ fun SwitchUserContent(
         }
 
         LoadingState.Success -> {
-            val glass = LocalLiquidGlass.current
             Box(
                 modifier = modifier.dimAndBlur(showAddUser || switchUserWithPin != null),
             ) {
-                if (glass) {
-                    // Two columns: the question on the left, the answer on the right. A centred
-                    // sheet with a centred title gave the screen no hierarchy and made a
-                    // four-profile household scroll horizontally through its own family.
-                    Column(
-                        verticalArrangement = Arrangement.spacedBy(12.dp),
+                // One layout, in every theme. This screen used to keep the classic centred list
+                // behind a `LocalLiquidGlass` branch, and because that local is only known once
+                // preferences load, a cold start drew the old "Select User" column for a frame or
+                // two before the new one replaced it. A login screen that flickers through its
+                // previous design is a bug even when the design that lands is right. The left
+                // column is the question, the right pane is the answer — profiles as rows, not a
+                // horizontal strip the household has to scroll through.
+                Column(
+                    verticalArrangement = Arrangement.spacedBy(12.dp),
                         modifier =
                             Modifier
                                 .align(Alignment.CenterStart)
@@ -208,59 +211,7 @@ fun SwitchUserContent(
                             Modifier
                                 .align(Alignment.TopEnd)
                                 .padding(top = 84.dp, end = 60.dp),
-                    )
-                } else {
-                    Column(
-                        horizontalAlignment = Alignment.CenterHorizontally,
-                        verticalArrangement = Arrangement.spacedBy(28.dp),
-                        modifier =
-                            Modifier
-                                .fillMaxWidth()
-                                .align(Alignment.Center)
-                                .padding(16.dp),
-                    ) {
-                        Column(
-                            horizontalAlignment = Alignment.CenterHorizontally,
-                            verticalArrangement = Arrangement.spacedBy(8.dp),
-                        ) {
-                            Text(
-                                text = stringResource(R.string.select_user),
-                                style = MaterialTheme.typography.displaySmall,
-                                color = MaterialTheme.colorScheme.onSurface,
-                            )
-                            Text(
-                                text = server.name ?: server.url,
-                                style = MaterialTheme.typography.titleLarge,
-                                color = MaterialTheme.colorScheme.onSurface,
-                            )
-                        }
-                        UserList(
-                            users = state.users,
-                            currentUser = currentUser,
-                            onSwitchUser = { user ->
-                                if (user.accessToken == null || user.requireLogin) {
-                                    showAddUserDialog(user)
-                                } else if (user.hasPin) {
-                                    switchUserWithPin = user
-                                } else {
-                                    trySwitchUser(user)
-                                }
-                            },
-                            onAddUser = {
-                                showAddUserDialog(null)
-                            },
-                            onRemoveUser = { user ->
-                                viewModel.removeUser(user)
-                            },
-                            onSwitchServer = {
-                                viewModel.setupNavigationManager.navigateTo(
-                                    SetupDestination.ServerList,
-                                )
-                            },
-                            modifier = Modifier.fillMaxWidth(),
-                        )
-                    }
-                }
+                )
                 val resources = LocalResources.current
                 val message =
                     remember(resources, state.serverVersionSupported) {
@@ -315,7 +266,7 @@ fun SwitchUserContent(
                             Text(
                                 text = "Waiting for Quick Connect code...",
                                 style = MaterialTheme.typography.titleMedium,
-                                color = MaterialTheme.colorScheme.onSurface,
+                                color = LocalContentColor.current,
                                 textAlign = TextAlign.Center,
                                 modifier = Modifier,
                             )
@@ -324,14 +275,14 @@ fun SwitchUserContent(
                         Text(
                             text = "Use Quick Connect on your device to authenticate to ${server.name ?: server.url}",
                             style = MaterialTheme.typography.titleMedium,
-                            color = MaterialTheme.colorScheme.onSurface,
+                            color = LocalContentColor.current,
                             textAlign = TextAlign.Center,
                             modifier = Modifier.fillMaxWidth(),
                         )
                         Text(
                             text = state.quickConnectStatus?.code ?: "Failed to get code",
                             style = MaterialTheme.typography.displayMedium,
-                            color = MaterialTheme.colorScheme.onSurface,
+                            color = LocalContentColor.current,
                             modifier = Modifier.align(Alignment.CenterHorizontally),
                         )
                     }
@@ -364,11 +315,24 @@ fun SwitchUserContent(
                             passwordFocusRequester.tryRequestFocus()
                         }
                     }
+                    // The first line of the dialog is its title, at the sheet's scale. It used
+                    // to open with one long sentence of instructions in the body size, which
+                    // is what made the login sheet read as a leftover from the old setup flow.
                     Text(
-                        text = "Enter username/password to login to ${server.name ?: server.url}",
+                        text = stringResource(R.string.login),
+                        style =
+                            if (LocalLiquidGlass.current) {
+                                GlassType.sectionTitle
+                            } else {
+                                MaterialTheme.typography.headlineSmall
+                            },
+                        color = LocalContentColor.current,
+                        modifier = Modifier.fillMaxWidth(),
+                    )
+                    Text(
+                        text = "Sign in to ${server.name ?: server.url}",
                         style = MaterialTheme.typography.titleMedium,
-                        color = MaterialTheme.colorScheme.onSurface,
-                        textAlign = TextAlign.Center,
+                        color = LocalContentColor.current.copy(alpha = 0.72f),
                         modifier = Modifier.fillMaxWidth(),
                     )
                     UserStateError(state.switchUserState)

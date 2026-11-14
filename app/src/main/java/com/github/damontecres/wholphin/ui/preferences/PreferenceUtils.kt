@@ -18,6 +18,12 @@ data class PreferenceGroup<T>(
     @param:StringRes val title: Int,
     val preferences: List<AppPreference<T, out Any?>>,
     val conditionalPreferences: List<ConditionalPreferences<T>> = listOf(),
+    /**
+     * One line on what the group covers, shown under the sheet title. A rail of nouns is
+     * quick to scan and easy to misread — "Interface" could be anything — so the selected
+     * section says what it is for.
+     */
+    @param:StringRes val description: Int? = null,
 )
 
 data class ConditionalPreferences<T>(

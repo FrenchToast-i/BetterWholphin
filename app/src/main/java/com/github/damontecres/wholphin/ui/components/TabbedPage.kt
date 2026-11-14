@@ -129,6 +129,7 @@ fun TabbedPage(
             key = "$itemId-${tabs.size}",
             creationCallback = { it.create(itemId, tabs.size) },
         ),
+    header: (@Composable () -> Unit)? = null,
     tabContent: @Composable (Int, TabDetails) -> Unit,
 ) {
     val selectedTabIndex by viewModel.state.collectAsState()
@@ -140,6 +141,7 @@ fun TabbedPage(
         isShowClock = isShowClock,
         modifier = modifier,
         showTabs = showTabs,
+        header = header,
         tabContent = tabContent,
     )
 }
@@ -152,6 +154,7 @@ fun TabbedPage(
     isShowClock: Boolean,
     modifier: Modifier = Modifier,
     showTabs: Boolean = true,
+    header: (@Composable () -> Unit)? = null,
     tabContent: @Composable (Int, TabDetails) -> Unit,
 ) {
     // The clock reserves 184dp on the classic drawer layout because it floats over the page's
@@ -169,6 +172,10 @@ fun TabbedPage(
     Column(
         modifier = modifier,
     ) {
+        // An optional identity band above the tabs. Live TV uses it for the live game count, so
+        // every tab — guide, channels, DVR — says whether anything is on before the viewer
+        // opens a schedule. Pages that do not pass one pay no space for it.
+        header?.invoke()
         AnimatedVisibility(
             showTabs,
             enter = expandVertically(),
@@ -201,6 +208,7 @@ fun <T> KeyedTabbedPage(
     isShowClock: Boolean,
     modifier: Modifier = Modifier,
     showTabs: Boolean = true,
+    header: (@Composable () -> Unit)? = null,
     tabContent: @Composable (T, TabDetails) -> Unit,
 ) {
     // The clock reserves 184dp on the classic drawer layout because it floats over the page's
@@ -218,6 +226,10 @@ fun <T> KeyedTabbedPage(
     Column(
         modifier = modifier,
     ) {
+        // An optional identity band above the tabs. Live TV uses it for the live game count, so
+        // every tab — guide, channels, DVR — says whether anything is on before the viewer
+        // opens a schedule. Pages that do not pass one pay no space for it.
+        header?.invoke()
         AnimatedVisibility(
             showTabs,
             enter = expandVertically(),

@@ -1,5 +1,18 @@
 # Agent notes
 
+## What this app is for
+
+**This app is for, at least for the time being, almost exclusively watching films and series the
+household already owns on Jellyfin, and watching live sport. Anything past that is excessive.**
+Discovery rails, requests, social features and new surfaces can be nice, and they may stay, but
+they are backburner work: they must never take space, focus or development effort away from
+playing the library and the tuner. A new feature that does not make "press play on something I
+already have" or "find the game that is on" faster or calmer is not a priority for this UI.
+
+Concretely, when weighing a layout: the watch rows and the sports board outrank every discovery
+shelf, the library grid outranks the request queue, and a setting the household changes outranks
+a setting it never opens.
+
 ## Build environment
 
 - A full JDK is required (21 works). With a JRE-only install Gradle fails with
@@ -815,3 +828,102 @@
   fixture. A programme that has not started still opens the sheet: tuning its channel would show
   whatever is on *now*, which is not what the viewer selected.
 - Gaps stay unfocusable. A cell that cannot be watched must not collect D-pad presses.
+
+## Home, as of the second overhaul
+
+- **Home has no hero.** The 200dp focused-item pane above the rows was the reason a 540dp
+  television showed exactly one row of its own library. The focused card's artwork is already the
+  backdrop, and the cards already carry captions; the pane added nothing the page did not have.
+  `HomePageContent` still accepts `showHeader` (default true) because the series recommendations
+  page and the home-settings preview genuinely use a focused-item header — Home sets it false.
+- **The discovery shelves are off Home.** My List, For You, Because you're watching, Top 10 and
+  the Seerr requests rail are not part of the household's library and, per the scope rule at the
+  top of this file, they do not belong above or between its rows. They remain on Search and
+  Discover, where the viewer went looking for them. Do not add a discovery rail back to Home
+  without a stronger reason than "it fills the page".
+- The page opens on the viewer's own rows: Continue watching, Watch live, Recently added. The
+  `Watch live` row is a configured `HomeRowConfig` row and already draws the tuner's live games as
+  16:9 cards, so sport is one shelf from the top without a second data path.
+
+## Backdrops follow focus everywhere
+
+- `CollectionFolderView` gated its focus submission on `viewOptions.showBackdrop`, which defaults
+  to **false**: every library grid (Movies, Shows, music) therefore kept the previous page's art
+  while the D-pad moved across its posters. In glass mode the grid now always submits the focused
+  item. The switch still exists for the classic layouts, where a backdrop behind an opaque page
+  was a per-library taste question.
+
+## Settings: two panes in glass
+
+- Glass settings is a **rail plus a detail list**, not one long column. `PreferencesContent` keeps
+  its single list for classic, but when glass is on it renders `SettingsRail` (the group titles)
+  and composes only the selected group's rows. The sheet widened from 74% to 84% because the rail
+  is 198dp of fixed width.
+- Focus starts on the rail so the first press can choose a section; Right walks into the rows.
+  Switching sections scrolls the detail list to the top — without that, the second section opened
+  at the previous section's scroll offset.
+- The identity header (title, profile, version, hairline) spans both panes.
+
+## Seerr Discover, second pass
+
+- No page hero. A compact title and one-line subtitle say where the viewer is; the shelves are
+  the page. The old header was a half-screen pane that only filled when a poster was focused.
+- The order is Trending, Movies, Shows, Coming soon, then **Browse by genre** under its own
+  caption at the end. The genre browsers are a browsing aid, not the lead.
+- `ROW_GENRES_TV` read `state.movieGenres`; focusing a television genre looked up a film genre
+  with the same index. It reads `state.tvGenres` now.
+
+## Live TV: the band above the tabs
+
+- `TabbedPage` takes an optional `header` slot. Live TV passes `LiveTvHeader`, which reports the
+  live game count (a red chip) and the next kickoff on every tab — guide, channels and DVR alike.
+  A viewer opening Live TV should not have to open a schedule to learn whether a game is on.
+- The duplicate "Sports" heading inside the Sports tab is gone; the band carries the page title
+  and the count once.
+- A live feature card carries a thin red elapsed-time rule under its copy, matching the progress
+  the guide cells already draw. A live game is a length, not just a state.
+
+## Live TV filters
+
+- The band above the tabs carries two toggle chips: **Favourites** and **Sports only**. They are
+  not per-tab state: one filter applies to the guide, the channel grid and the sports board at
+  once, so switching tabs can never silently change which channels are being described.
+- Selected uses the white-fill/dark-type signal the bar uses for the current page. Focus is a
+  dark rim, never a lighter fill: a white chip with a white focus ring is indistinguishable from
+  a white chip.
+- "Sports only" is built from the guide's own `ProgramCategory.SPORTS` programmes, so it appears
+  only once listings exist. Before then the chip would filter to nothing, which reads as a broken
+  page rather than as an empty category.
+- Each surface has a filter-aware empty state ("No channels match these filters", "No favourite
+  channels have games on") instead of the tuner-missing messages. Sending a viewer to refresh a
+  guide that is working is worse than saying the filter matched nothing.
+
+## Pruning pass, settings and discovery
+
+- Settings reads in the order a household asks: **Profile** (who is signed in, home layout,
+  language), **Interface** (theme, glass, logos, backdrop, top bar), **Playback** (skips, subtitle
+  style, theme music), **Next up**, **Tonight** (bedtime and screensaver), **Discovery** (Seerr,
+  TMDB), **About**, **More**. The old `User Profile Settings` group was a junk drawer that mixed a
+  subtitle style with a PIN; nothing in the new order is in two groups at once.
+- The update card and the server-version warning only appear at the top of **About**. They describe
+  the build, and repeating them above Profile, Playback and Discovery made every section look like
+  it had the same first row.
+- One update action, not two: the About group's `Update` row was removed because the install card
+  directly above it does the same thing more legibly.
+- **Discover** has no Trending shelf. Trending films lead the Movies row and trending shows lead
+  the TV row, de-duplicated by id, so each medium has one heading and no poster is shown twice.
+  Splitting them into three rails was the redundancy the page never needed.
+
+## Live TV opens before its recordings do
+
+- `CollectionFolderLiveTv` used to wrap the whole page in `when (folders)`: a spinner until
+  `getRecordingFolders` answered, and an error page if it failed. That made a shortcut to the
+  recordings gate the sports board, the guide and the channels — the three views this tuner
+  exists for. The folders now append their tabs when they arrive; a failed call costs the
+  shortcut and nothing else.
+- The band's filters gained **Live now** beside Favourites and Sports only. It is built from the
+  fixtures airing at this moment, so it answers "where is the game that is on" rather than
+  "which channels ever show sport". The chip only exists while something is live, and the filter
+  clears itself when the last game ends: a chip that can only show an empty list is a trap.
+- On the sports board a live-only filter with no fixture says "No games are on right now" — an
+  answer, not a guide that failed to load.
