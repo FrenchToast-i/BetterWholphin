@@ -46,14 +46,16 @@ class TabViewModel
         val userPreferencesService: UserPreferencesService,
         private val rememberedTabService: RememberedTabService,
         private val backdropService: BackdropService,
-        @param:Assisted private val itemId: String,
-        @param:Assisted private val tabCount: Int,
+        @param:Assisted("itemId") private val itemId: String,
+        @param:Assisted("tabCount") private val tabCount: Int,
+        @param:Assisted("defaultTabIndex") private val defaultTabIndex: Int,
     ) : ViewModel() {
         @AssistedFactory
         interface Factory {
             fun create(
-                itemId: String,
-                tabCount: Int,
+                @Assisted("itemId") itemId: String,
+                @Assisted("tabCount") tabCount: Int,
+                @Assisted("defaultTabIndex") defaultTabIndex: Int,
             ): TabViewModel
         }
 
@@ -75,9 +77,9 @@ class TabViewModel
                         } catch (ex: Exception) {
                             Timber.e(ex, "Error getting tab for %s", itemId)
                             null
-                        } ?: 0
+                        } ?: defaultTabIndex
                     } else {
-                        0
+                        defaultTabIndex
                     }
                 _state.value = startingTab
             }
@@ -124,10 +126,16 @@ fun TabbedPage(
     tabs: List<TabDetails>,
     modifier: Modifier = Modifier,
     showTabs: Boolean = true,
+    /**
+     * The tab a page opens on when the viewer has not chosen one before. A library should
+     * open on its own shelf, not on a recommendation rail the viewer has to leave; a page
+     * that remembered a tab still opens there.
+     */
+    initialTabIndex: Int = 0,
     viewModel: TabViewModel =
         hiltViewModel<TabViewModel, TabViewModel.Factory>(
             key = "$itemId-${tabs.size}",
-            creationCallback = { it.create(itemId, tabs.size) },
+            creationCallback = { it.create(itemId, tabs.size, initialTabIndex) },
         ),
     header: (@Composable () -> Unit)? = null,
     tabContent: @Composable (Int, TabDetails) -> Unit,

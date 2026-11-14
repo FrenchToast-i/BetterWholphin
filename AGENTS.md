@@ -927,3 +927,29 @@ a setting it never opens.
   clears itself when the last game ends: a chip that can only show an empty list is a trap.
 - On the sports board a live-only filter with no fixture says "No games are on right now" — an
   answer, not a guide that failed to load.
+
+## Landing on the shelf, not the suggestion rail
+
+- Movies and Shows open on **Library**. `TabbedPage` now takes an `initialTabIndex`, used only
+  when the profile has never chosen a tab; a remembered tab still wins. Opening a library on
+  Jellyfin's recommendation rail put a curated shelf between the viewer and the films they own,
+  and on a small library that rail can be empty — a blank page with the real shelf one tab away.
+  The tab order is unchanged, so a remembered index still means the same tab.
+- The library header no longer carries a **random** disc. It sat beside Shuffle and did the slower
+  half of the same job (open one random title's page instead of starting it), costing a focus
+  stop and a sixth control in a row whose job is "start something from here". Shuffle remains.
+- Favorites remembers the position in each type's grid. Switching Movies → Series → Movies used
+  to drop the viewer at the first favourite again, because every tab was composed at position 0.
+
+## The episode page and the next-up card
+
+- `EpisodeDetails` is a pane now, like a movie and a series: `GlassPanel(scrim = 1f)` at 66% holds
+  the series name, episode name, quick details, description **and** the play row. It was the last
+  detail page drawing copy straight onto the backdrop, and it is the detail page a viewer opens
+  most often from a season list. The classic layout keeps its full-width column and its
+  `HeaderUtils.topPadding`.
+- The end-of-episode `NextUpEpisode` card sits over **video**, where there is nothing to refract.
+  It therefore uses the player's smoked tint (62% black, 16dp corners) rather than the theme's
+  opaque elevation surface, and white ink rather than the glass theme's dark `onSurface` — dark
+  type on the smoked slab was invisible. `NextUpCard` takes the same ink so the countdown and the
+  play glyph match the copy beside them.

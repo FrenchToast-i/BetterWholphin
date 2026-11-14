@@ -93,6 +93,7 @@ import com.github.damontecres.wholphin.ui.preferences.subtitle.SubtitleSettings.
 import com.github.damontecres.wholphin.ui.preferences.subtitle.SubtitleSettings.calculateEdgeSize
 import com.github.damontecres.wholphin.ui.seasonEpisode
 import com.github.damontecres.wholphin.ui.tryRequestFocus
+import com.github.damontecres.wholphin.ui.theme.LocalLiquidGlass
 import com.github.damontecres.wholphin.ui.watchparty.WatchPartyDialog
 import com.github.damontecres.wholphin.util.ExceptionHandler
 import com.github.damontecres.wholphin.util.LoadingState
@@ -751,8 +752,14 @@ fun PlaybackPageContent(
                             .fillMaxWidth(.66f)
                             .align(Alignment.BottomCenter)
                             .background(
-                                MaterialTheme.colorScheme.surfaceColorAtElevation(2.dp),
-                                shape = RoundedCornerShape(8.dp),
+                                // Over video there is nothing to refract, so glass mode uses the
+                                // player's smoked tint instead of the theme's opaque surface.
+                                if (LocalLiquidGlass.current) {
+                                    Color.Black.copy(alpha = 0.62f)
+                                } else {
+                                    MaterialTheme.colorScheme.surfaceColorAtElevation(2.dp)
+                                },
+                                shape = RoundedCornerShape(if (LocalLiquidGlass.current) 16.dp else 8.dp),
                             ),
                 )
             }

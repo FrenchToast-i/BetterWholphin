@@ -70,6 +70,8 @@ fun CollectionFolderTv(
         tabs = tabs,
         modifier = modifier,
         showTabs = showHeader,
+        // The library before the recommendation rail, for the same reason as Movies.
+        initialTabIndex = 1,
     ) { tabIndex, tabDetails ->
         when (tabIndex) {
             // Recommended

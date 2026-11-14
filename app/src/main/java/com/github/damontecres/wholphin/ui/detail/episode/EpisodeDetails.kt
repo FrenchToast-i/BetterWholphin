@@ -46,6 +46,9 @@ import com.github.damontecres.wholphin.ui.data.ItemDetailsDialogInfo
 import com.github.damontecres.wholphin.ui.detail.PlaylistDialog
 import com.github.damontecres.wholphin.ui.nav.Destination
 import com.github.damontecres.wholphin.ui.rememberInt
+import com.github.damontecres.wholphin.ui.theme.GlassPanel
+import com.github.damontecres.wholphin.ui.theme.GlassTokens
+import com.github.damontecres.wholphin.ui.theme.LocalLiquidGlass
 import com.github.damontecres.wholphin.util.DataLoadingState
 import com.github.damontecres.wholphin.util.ExceptionHandler
 import kotlinx.coroutines.launch
@@ -264,13 +267,14 @@ fun EpisodeDetailsContent(
             modifier = Modifier.fillMaxSize(),
         ) {
             item {
-                Column(
-                    verticalArrangement = Arrangement.spacedBy(0.dp),
-                    modifier =
-                        Modifier
-                            .fillMaxWidth()
-                            .bringIntoViewRequester(bringIntoViewRequester),
-                ) {
+                // The episode page was the last detail page still drawing its copy and its
+                // buttons straight onto the backdrop. A movie and a series both present one
+                // pane that holds the whole header; an episode is the page a viewer opens most
+                // often from a season list, and it should not be the one that looks unfinished.
+                val glass = LocalLiquidGlass.current
+
+                @Composable
+                fun CopyAndActions(inPane: Boolean) {
                     EpisodeDetailsHeader(
                         preferences = preferences,
                         ep = ep,
@@ -280,7 +284,10 @@ fun EpisodeDetailsContent(
                         modifier =
                             Modifier
                                 .fillMaxWidth()
-                                .padding(top = HeaderUtils.topPadding, bottom = 16.dp),
+                                .padding(
+                                    top = if (inPane) 0.dp else HeaderUtils.topPadding,
+                                    bottom = if (inPane) 12.dp else 16.dp,
+                                ),
                     )
                     ExpandablePlayButtons(
                         title = ep.title ?: "",
@@ -318,9 +325,42 @@ fun EpisodeDetailsContent(
                         modifier =
                             Modifier
                                 .fillMaxWidth()
-                                .padding(bottom = 16.dp)
+                                .padding(bottom = if (inPane) 0.dp else 16.dp)
                                 .focusRequester(focusRequesters[HEADER_ROW]),
                     )
+                }
+                if (glass) {
+                    Box(
+                        modifier =
+                            Modifier
+                                .fillMaxWidth()
+                                .padding(horizontal = GlassTokens.screenInset, vertical = 4.dp),
+                    ) {
+                        GlassPanel(
+                            modifier = Modifier.fillMaxWidth(0.66f),
+                            scrim = 1f,
+                        ) {
+                            Column(
+                                verticalArrangement = Arrangement.spacedBy(0.dp),
+                                modifier =
+                                    Modifier
+                                        .padding(horizontal = 20.dp, vertical = 18.dp)
+                                        .bringIntoViewRequester(bringIntoViewRequester),
+                            ) {
+                                CopyAndActions(true)
+                            }
+                        }
+                    }
+                } else {
+                    Column(
+                        verticalArrangement = Arrangement.spacedBy(0.dp),
+                        modifier =
+                            Modifier
+                                .fillMaxWidth()
+                                .bringIntoViewRequester(bringIntoViewRequester),
+                    ) {
+                        CopyAndActions(false)
+                    }
                 }
             }
         }

@@ -6,6 +6,7 @@ import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableStateMapOf
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.saveable.rememberSaveable
@@ -32,6 +33,7 @@ import com.github.damontecres.wholphin.ui.components.defaultViewOptions
 import com.github.damontecres.wholphin.ui.components.rememberContextMenu
 import com.github.damontecres.wholphin.ui.data.rememberSortOptions
 import com.github.damontecres.wholphin.ui.tryRequestFocus
+import org.jellyfin.sdk.model.api.BaseItemKind
 
 @Composable
 fun FavoritesPage(
@@ -43,6 +45,9 @@ fun FavoritesPage(
     val state by viewModel.state.collectAsState()
 
     var showTabs by rememberSaveable { mutableStateOf(true) }
+    // Where the viewer was in each list. Switching from Movies to Series and back used to
+    // drop them at the first favourite again, because every tab was composed with position 0.
+    val savedPositions = remember { mutableStateMapOf<BaseItemKind, Int>() }
 
     when (val s = state.loadingState) {
         is FavoritesLoadingState.Error -> {
@@ -101,7 +106,6 @@ fun FavoritesPage(
                     CollectionFolderViewContent(
                         preferences = preferences,
                         state = collectionState,
-                        savedPosition = 0,
                         itemId = remember { viewModel.libraryDisplayItemId(type) },
                         initialFilter = CollectionFolderFilter(),
                         recursive = true,
@@ -113,8 +117,10 @@ fun FavoritesPage(
                         viewActions = provider,
                         provider = provider,
                         showTitle = false,
+                        savedPosition = savedPositions[type] ?: 0,
                         positionCallback = { columns, index ->
                             showTabs = index < columns
+                            savedPositions[type] = index
                         },
                         focusRequesterOnEmpty = null,
                         filterOptions = DefaultForFavoritesFilterOptions,

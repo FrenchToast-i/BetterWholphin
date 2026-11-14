@@ -306,14 +306,12 @@ fun CollectionFolderHeader(
     getPossibleFilterValues: suspend (ItemFilterBy<*>) -> List<FilterValueOption>,
     onClickShowViewOptions: () -> Unit,
     onClickPlayAll: (Boolean) -> Unit,
-    onClickRandom: () -> Unit,
     modifier: Modifier = Modifier,
     currentFilter: GetItemsFilter = GetItemsFilter(),
     filterOptions: List<ItemFilterBy<*>> = listOf(),
     onFilterChange: (GetItemsFilter) -> Unit = {},
     onShowFilterDropdown: ((Boolean) -> Unit)? = null,
     filterButtonFocusRequester: FocusRequester = remember { FocusRequester() },
-    randomButtonFocusRequester: FocusRequester = remember { FocusRequester() },
 ) {
     AnimatedVisibility(
         showHeader,
@@ -388,14 +386,6 @@ fun CollectionFolderHeader(
                     verticalAlignment = Alignment.CenterVertically,
                     modifier = Modifier,
                 ) {
-                    ExpandableFaButton(
-                        title = R.string.sort_by_random,
-                        iconStringRes = R.string.fa_dice,
-                        onClick = onClickRandom,
-                        modifier = Modifier.focusRequester(randomButtonFocusRequester),
-                        enabled = listIsNotEmpty,
-                    )
-
                     if (playEnabled) {
                         ExpandablePlayButton(
                             title = R.string.play,

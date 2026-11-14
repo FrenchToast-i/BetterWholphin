@@ -52,6 +52,10 @@ fun CollectionFolderMovie(
         tabs = tabs,
         modifier = modifier,
         showTabs = showHeader,
+        // Land on the library itself. "Recommended" is a shelf of what Jellyfin picked,
+        // which is the right thing to offer second on a television that already owns the
+        // films; opening on it put a curated rail between the viewer and their shelf.
+        initialTabIndex = 1,
     ) { tabIndex, tabDetails ->
         when (tabIndex) {
             // Recommended

@@ -53,6 +53,7 @@ import com.github.damontecres.wholphin.ui.dot
 import com.github.damontecres.wholphin.ui.formatDuration
 import com.github.damontecres.wholphin.ui.formatTime
 import com.github.damontecres.wholphin.ui.theme.WholphinTheme
+import com.github.damontecres.wholphin.ui.theme.LocalLiquidGlass
 import com.github.damontecres.wholphin.ui.tryRequestFocus
 import com.github.damontecres.wholphin.ui.util.Clock
 import com.github.damontecres.wholphin.ui.util.LocalClock
@@ -77,6 +78,11 @@ fun NextUpEpisode(
 ) {
     val interactionSource = remember { MutableInteractionSource() }
     val focusRequester = remember { FocusRequester() }
+    // The card sits over video, where the glass theme's dark ink is unreadable on the
+    // smoked slab the player uses. Glass mode draws white type, the classic themes keep
+    // their own onSurface.
+    val ink =
+        if (LocalLiquidGlass.current) Color.White else MaterialTheme.colorScheme.onSurface
     LaunchedEffect(Unit) { focusRequester.tryRequestFocus() }
     Box(
         modifier = modifier,
@@ -91,7 +97,7 @@ fun NextUpEpisode(
             Text(
                 text = stringResource(R.string.next_up) + "...",
                 style = MaterialTheme.typography.titleLarge,
-                color = MaterialTheme.colorScheme.onSurface,
+                color = ink,
                 textAlign = TextAlign.Center,
                 modifier = Modifier.fillMaxWidth(),
             )
@@ -123,7 +129,7 @@ fun NextUpEpisode(
                     Text(
                         text = title ?: "",
                         style = MaterialTheme.typography.titleMedium,
-                        color = MaterialTheme.colorScheme.onSurface,
+                        color = ink,
                         maxLines = 1,
                         overflow = TextOverflow.Ellipsis,
                         modifier = Modifier,
@@ -131,7 +137,7 @@ fun NextUpEpisode(
                     Text(
                         text = description ?: "",
                         style = MaterialTheme.typography.bodyMedium,
-                        color = MaterialTheme.colorScheme.onSurface,
+                        color = ink.copy(alpha = 0.86f),
                         maxLines = 4,
                         overflow = TextOverflow.Ellipsis,
                         modifier = Modifier,
@@ -153,7 +159,7 @@ fun NextUpEpisode(
                         Text(
                             text = text,
                             style = MaterialTheme.typography.bodySmall,
-                            color = MaterialTheme.colorScheme.onSurface,
+                            color = ink.copy(alpha = 0.72f),
                             maxLines = 1,
                             overflow = TextOverflow.Ellipsis,
                             modifier =
@@ -176,6 +182,8 @@ fun NextUpCard(
     interactionSource: MutableInteractionSource,
     modifier: Modifier = Modifier,
 ) {
+    val ink =
+        if (LocalLiquidGlass.current) Color.White else MaterialTheme.colorScheme.onSurface
     Card(
         modifier = modifier,
         onClick = onClick,
@@ -202,14 +210,14 @@ fun NextUpCard(
                     Text(
                         text = timeLeft.toString(),
                         style = MaterialTheme.typography.titleMedium,
-                        color = MaterialTheme.colorScheme.onSurface,
+                        color = ink,
                         modifier = Modifier.padding(12.dp),
                     )
                 } else {
                     Icon(
                         imageVector = Icons.Default.PlayArrow,
                         contentDescription = null,
-                        tint = MaterialTheme.colorScheme.onSurface,
+                        tint = ink,
                         modifier =
                             Modifier
                                 .size(60.dp)
