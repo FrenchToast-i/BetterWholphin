@@ -1,13 +1,16 @@
 package com.github.damontecres.wholphin
 
+import android.app.Activity
 import android.content.Context
 import android.content.Intent
+import android.media.projection.MediaProjectionManager
 import android.content.res.Configuration
 import android.os.Bundle
 import android.view.KeyEvent
 import android.view.WindowManager
 import android.widget.Toast
 import androidx.activity.compose.setContent
+import androidx.activity.result.contract.ActivityResultContracts
 import androidx.activity.viewModels
 import androidx.annotation.VisibleForTesting
 import androidx.appcompat.app.AppCompatActivity
@@ -56,6 +59,7 @@ import com.github.damontecres.wholphin.services.SuggestionsSchedulerService
 import com.github.damontecres.wholphin.services.UpdateChecker
 import com.github.damontecres.wholphin.services.UserPreferencesService
 import com.github.damontecres.wholphin.services.UserSwitchListener
+import com.github.damontecres.wholphin.services.bugreport.BugReportService
 import com.github.damontecres.wholphin.services.WatchPartyService
 import com.github.damontecres.wholphin.services.hilt.AuthOkHttpClient
 import com.github.damontecres.wholphin.services.tvprovider.TvProviderSchedulerService
@@ -164,11 +168,21 @@ class MainActivity : AppCompatActivity() {
 
     private var signInAuto = true
     private var playerBackend: PlayerBackend? = null
+    private var pendingBugReport = false
+
+    private val bugReportLauncher =
+        registerForActivityResult(ActivityResultContracts.StartActivityForResult()) { result ->
+            val data = result.data
+            if (result.resultCode == Activity.RESULT_OK && data != null) {
+                BugReportService.start(this, result.resultCode, data)
+            }
+        }
 
     @OptIn(ExperimentalTvMaterial3Api::class)
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
         instance = this
+        maybeStartBugReport(intent)
         Timber.i("MainActivity.onCreate: savedInstanceState is null=${savedInstanceState == null}")
         lifecycle.addObserver(playbackLifecycleObserver)
 
@@ -296,6 +310,10 @@ class MainActivity : AppCompatActivity() {
     override fun onResume() {
         super.onResume()
         Timber.d("onResume")
+        if (pendingBugReport) {
+            pendingBugReport = false
+            requestBugReportConsent()
+        }
         viewModel.appResume()
         lifecycleScope.launchDefault {
             screensaverService.pulse()
@@ -377,7 +395,26 @@ class MainActivity : AppCompatActivity() {
         super.onNewIntent(intent)
         Timber.v("onNewIntent")
         setIntent(intent)
+        maybeStartBugReport(intent)
+        // The activity is already resumed when the toggle arrives, so onResume will not run
+        // again: ask for the capture grant here rather than dropping the press.
+        if (pendingBugReport) {
+            pendingBugReport = false
+            requestBugReportConsent()
+        }
         viewModel.appStart(intent)
+    }
+
+    private fun requestBugReportConsent() {
+        val manager = getSystemService(MediaProjectionManager::class.java)
+        bugReportLauncher.launch(manager.createScreenCaptureIntent())
+    }
+
+    private fun maybeStartBugReport(intent: Intent?) {
+        if (intent?.getBooleanExtra(EXTRA_BUG_REPORT, false) == true) {
+            intent.removeExtra(EXTRA_BUG_REPORT)
+            pendingBugReport = true
+        }
     }
 
     fun changeDisplayMode(modeId: Int) {
@@ -400,6 +437,8 @@ class MainActivity : AppCompatActivity() {
     companion object {
         private const val KEY_BACK_STACK = "backStack"
         private const val KEY_EXTERNAL_PLAYER = "extPlayer"
+
+        const val EXTRA_BUG_REPORT = "bug_report"
 
         lateinit var instance: MainActivity
             private set

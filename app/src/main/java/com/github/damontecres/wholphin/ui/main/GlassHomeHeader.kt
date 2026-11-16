@@ -91,12 +91,14 @@ fun GlassHomeHeader(
         // The height is the important number. A wrapped hero grew to nearly 330dp — more than
         // half a 540dp screen — and the first shelf could only show a clipped row of posters.
         // A TV hero is a masthead: title, one metadata line, two actions, and the artwork gets
-        // the rest of the frame.
+        // the rest of the frame. 160dp is the tallest this content fits in; on the library's
+        // Recommended tab the extra 18dp was exactly what pushed the Next Up row's posters past
+        // the bottom edge, so the hero gave the shelf back the room.
         modifier =
             modifier
-                .padding(bottom = 16.dp)
+                .padding(bottom = 8.dp)
                 .fillMaxWidth(0.56f)
-                .height(178.dp),
+                .height(160.dp),
         shape = RoundedCornerShape(GlassTokens.panelRadius),
         // Chromatic aberration stays off: the library's dispersion shader takes seven displaced
         // samples per pixel, which turns every high-contrast edge behind the pane into a rainbow

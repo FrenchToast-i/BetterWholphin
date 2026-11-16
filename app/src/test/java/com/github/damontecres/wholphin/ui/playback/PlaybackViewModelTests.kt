@@ -38,6 +38,7 @@ import com.github.damontecres.wholphin.services.WatchPartyService
 import com.github.damontecres.wholphin.test.TestTracks
 import com.github.damontecres.wholphin.test.movie
 import com.github.damontecres.wholphin.test.playlist
+import com.github.damontecres.wholphin.test.tvChannel
 import com.github.damontecres.wholphin.ui.nav.Destination
 import com.github.damontecres.wholphin.ui.successQueryResult
 import com.github.damontecres.wholphin.ui.successResponse
@@ -75,6 +76,7 @@ import org.jellyfin.sdk.model.api.MediaSegmentDto
 import org.jellyfin.sdk.model.api.MediaSegmentDtoQueryResult
 import org.jellyfin.sdk.model.api.MediaSegmentType
 import org.jellyfin.sdk.model.api.MediaStreamType
+import org.jellyfin.sdk.model.api.PlaybackInfoDto
 import org.jellyfin.sdk.model.api.PlaybackInfoResponse
 import org.jellyfin.sdk.model.extensions.inWholeTicks
 import org.jellyfin.sdk.model.extensions.ticks
@@ -344,6 +346,56 @@ class PlaybackViewModelTests {
                     playSessionId = playSessionId,
                 )
             }
+        }
+
+    @Test
+    fun `Live channel can switch to the provider link`() =
+        runTest(testDispatcher) {
+            setupPreferences { allowTranscoding = false }
+            val channel = tvChannel()
+            val providerUrl = "http://provider.example/live/channel.m3u8"
+            val liveSource = mediaSource.copy(path = providerUrl)
+            coEvery { mockUserLibraryApi.getItem(channel.id) } returns successResponse(channel)
+            coEvery { mockMediaInfoApi.getPostedPlaybackInfo(any(), any()) } returns
+                successResponse(
+                    PlaybackInfoResponse(
+                        mediaSources = listOf(liveSource),
+                        playSessionId = playSessionId,
+                    ),
+                )
+
+            val viewModel = createViewModel(Destination.Playback(channel.id, 0L))
+
+            Assert.assertTrue(viewModel.state.value.isLiveTv)
+            Assert.assertTrue(viewModel.state.value.liveDirectSourceAvailable)
+            Assert.assertFalse(viewModel.state.value.liveDirectSource)
+            Assert.assertNotNull(viewModel.state.value.currentPlayback)
+            Assert.assertEquals(
+                org.jellyfin.sdk.model.api.BaseItemKind.TV_CHANNEL,
+                viewModel.state.value.currentPlayback?.item?.type,
+            )
+            Assert.assertEquals(
+                org.jellyfin.sdk.model.api.BaseItemKind.TV_CHANNEL,
+                viewModel.currentItem.item.type,
+            )
+            Assert.assertEquals(
+                providerUrl,
+                viewModel.state.value.currentPlayback?.mediaSourceInfo?.path,
+            )
+
+            Assert.assertTrue(viewModel.applyLiveSource(true))
+            testScheduler.advanceUntilIdle()
+
+            val directItem = slot<MediaItem>()
+            verify(exactly = 1) { mockPlayer.setMediaItem(capture(directItem)) }
+            Assert.assertEquals(providerUrl, directItem.captured.localConfiguration?.uri.toString())
+            Assert.assertTrue(viewModel.state.value.liveDirectSource)
+
+            // The server was asked for a source that cannot transcode, so the relay is a plain
+            // stream rather than a conversion.
+            val dto = slot<PlaybackInfoDto>()
+            coVerify(exactly = 1) { mockMediaInfoApi.getPostedPlaybackInfo(any(), capture(dto)) }
+            Assert.assertFalse(dto.captured.enableTranscoding == true)
         }
 
     @Test

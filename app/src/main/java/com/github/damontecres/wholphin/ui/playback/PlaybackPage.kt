@@ -79,7 +79,6 @@ import com.github.damontecres.wholphin.ui.AppColors
 import com.github.damontecres.wholphin.ui.AspectRatios
 import com.github.damontecres.wholphin.ui.LocalImageUrlService
 import com.github.damontecres.wholphin.ui.components.BasicDialog
-import com.github.damontecres.wholphin.ui.components.ErrorMessage
 import com.github.damontecres.wholphin.ui.components.LoadingPage
 import com.github.damontecres.wholphin.ui.nav.Destination
 import com.github.damontecres.wholphin.ui.playback.overlay.DpadSeekOverlay
@@ -129,7 +128,12 @@ fun PlaybackPage(
     val state by viewModel.state.collectAsState()
     when (val st = state.loading) {
         is LoadingState.Error -> {
-            ErrorMessage(st, modifier)
+            PlaybackErrorPage(
+                error = st,
+                onPlayWithTranscoding = viewModel::retryWithTranscoding,
+                onBack = { viewModel.navigationManager.goBack() },
+                modifier = modifier,
+            )
         }
 
         LoadingState.Pending,
@@ -354,6 +358,10 @@ fun PlaybackPageContent(
 
             is PlaybackAction.ChangeBitrate -> {
                 viewModel.changeMaxBitrate(it.maxBitrate)
+            }
+
+            is PlaybackAction.SetLiveSource -> {
+                viewModel.setLiveSource(it.direct)
             }
         }
     }
@@ -840,6 +848,10 @@ fun PlaybackPageContent(
                     // See https://github.com/damontecres/Wholphin/issues/164
                     playbackSpeedEnabled = playerBackend == PlayerBackend.MPV || state.currentPlayback?.audioDecoder != null,
                     maxBitrate = state.maxBitrate,
+                    isLiveTv = state.isLiveTv,
+                    liveDirectSource = state.liveDirectSource,
+                    liveDirectSourceAvailable = state.liveDirectSourceAvailable,
+                    transcodingAllowed = state.transcodingAllowed,
                 ),
             onDismissRequest = {
                 playbackDialog =
@@ -847,6 +859,7 @@ fun PlaybackPageContent(
                         // Go back to settings dialog
                         PlaybackDialogType.PLAYBACK_SPEED,
                         PlaybackDialogType.VIDEO_SCALE,
+                        PlaybackDialogType.LIVE_SOURCE,
                         -> PlaybackDialogType.SETTINGS
 
                         else -> null

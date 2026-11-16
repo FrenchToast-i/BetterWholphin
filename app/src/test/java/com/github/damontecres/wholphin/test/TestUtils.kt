@@ -50,6 +50,19 @@ fun episode(
     )
 
 /**
+ * Create a simple [BaseItemDto] live TV channel
+ */
+fun tvChannel(
+    id: UUID = UUID.randomUUID(),
+    name: String = "Test Channel",
+): BaseItemDto =
+    BaseItemDto(
+        id = id,
+        type = BaseItemKind.TV_CHANNEL,
+        name = name,
+    )
+
+/**
  * Create a simple [BaseItemDto] song
  */
 fun song(

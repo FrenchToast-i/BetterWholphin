@@ -136,6 +136,14 @@ sealed interface PlaybackAction {
     data class ChangeBitrate(
         val maxBitrate: Long,
     ) : PlaybackAction
+
+    /**
+     * Live TV only: switch between Jellyfin's relay and the tuner/provider URL the server
+     * handed us. The direct path is what makes the picture independent of the server's link.
+     */
+    data class SetLiveSource(
+        val direct: Boolean,
+    ) : PlaybackAction
 }
 
 /**

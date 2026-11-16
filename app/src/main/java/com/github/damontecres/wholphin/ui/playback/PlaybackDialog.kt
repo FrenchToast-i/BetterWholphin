@@ -63,6 +63,7 @@ enum class PlaybackDialogType {
     VIDEO_SCALE,
     SUBTITLE_DELAY,
     BITRATE,
+    LIVE_SOURCE,
 }
 
 data class PlaybackSettings(
@@ -77,6 +78,10 @@ data class PlaybackSettings(
     val hasSubtitleDownloadPermission: Boolean,
     val playbackSpeedEnabled: Boolean,
     val maxBitrate: Long,
+    val isLiveTv: Boolean,
+    val liveDirectSource: Boolean,
+    val liveDirectSourceAvailable: Boolean,
+    val transcodingAllowed: Boolean,
 )
 
 /**
@@ -166,13 +171,32 @@ fun PlaybackDialog(
                             ),
                         )
                     }
-                    add(
-                        BottomDialogItem(
-                            data = PlaybackDialogType.BITRATE,
-                            headline = stringResource(R.string.max_bitrate),
-                            supporting = remember(settings.maxBitrate) { formatMaxBitrate(settings.maxBitrate) },
-                        ),
-                    )
+                    if (settings.transcodingAllowed) {
+                        add(
+                            BottomDialogItem(
+                                data = PlaybackDialogType.BITRATE,
+                                headline = stringResource(R.string.max_bitrate),
+                                supporting = remember(settings.maxBitrate) { formatMaxBitrate(settings.maxBitrate) },
+                            ),
+                        )
+                    }
+                    if (settings.isLiveTv) {
+                        add(
+                            BottomDialogItem(
+                                data = PlaybackDialogType.LIVE_SOURCE,
+                                headline = stringResource(R.string.live_stream_source),
+                                supporting =
+                                    when {
+                                        !settings.liveDirectSourceAvailable ->
+                                            stringResource(R.string.live_source_unavailable)
+                                        settings.liveDirectSource ->
+                                            stringResource(R.string.live_source_direct)
+                                        else -> stringResource(R.string.live_source_server)
+                                    },
+                                enabled = settings.liveDirectSourceAvailable,
+                            ),
+                        )
+                    }
                     add(
                         BottomDialogItem(
                             data = PlaybackDialogType.DEBUG,
@@ -301,6 +325,36 @@ fun PlaybackDialog(
                 },
                 onSelectChoice = { _, choice ->
                     onPlaybackActionClick.invoke(PlaybackAction.ChangeBitrate(choice.data))
+                },
+                gravity = leftGravity,
+            )
+        }
+
+        PlaybackDialogType.LIVE_SOURCE -> {
+            val choices =
+                listOf(
+                    BottomDialogItem(
+                        data = false,
+                        headline = stringResource(R.string.live_source_server),
+                        supporting = stringResource(R.string.live_source_server_summary),
+                    ),
+                    BottomDialogItem(
+                        data = true,
+                        headline = stringResource(R.string.live_source_direct),
+                        supporting = stringResource(R.string.live_source_direct_summary),
+                        enabled = settings.liveDirectSourceAvailable,
+                    ),
+                )
+            BottomDialog(
+                choices = choices,
+                currentChoice = choices.firstOrNull { it.data == settings.liveDirectSource },
+                onDismissRequest = {
+                    onControllerInteraction.invoke()
+                    onDismissRequest.invoke()
+                },
+                onSelectChoice = { _, choice ->
+                    onDismissRequest.invoke()
+                    onPlaybackActionClick.invoke(PlaybackAction.SetLiveSource(choice.data))
                 },
                 gravity = leftGravity,
             )

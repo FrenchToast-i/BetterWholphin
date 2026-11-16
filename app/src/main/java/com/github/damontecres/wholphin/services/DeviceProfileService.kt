@@ -23,6 +23,14 @@ import javax.inject.Inject
 import javax.inject.Singleton
 
 /**
+ * A ceiling high enough to mean "no limit".
+ *
+ * Used when transcoding is off: a bitrate cap would otherwise make the server declare a large
+ * remux incompatible and offer a conversion the viewer explicitly disallowed.
+ */
+const val UNLIMITED_BITRATE = 1_000_000_000
+
+/**
  * Creates and caches the device direct play/transcoding profile sent to the server for ExoPlayer
  */
 @Singleton
@@ -49,7 +57,12 @@ class DeviceProfileService
                 mutex.withLock {
                     val newConfig =
                         DeviceProfileConfiguration(
-                            maxBitrate = prefs.maxBitrate.toInt(),
+                            maxBitrate =
+                                if (prefs.allowTranscoding) {
+                                    prefs.maxBitrate.toInt()
+                                } else {
+                                    UNLIMITED_BITRATE
+                                },
                             overrides = prefs.overrides,
                             experimental = appPrefs.experimentalPreferences,
                             jellyfinTenEleven =

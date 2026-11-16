@@ -62,6 +62,7 @@ import com.github.damontecres.wholphin.services.RefreshRateService
 import com.github.damontecres.wholphin.services.ScreensaverService
 import com.github.damontecres.wholphin.services.SleepTimerPlan
 import com.github.damontecres.wholphin.services.StreamChoiceService
+import com.github.damontecres.wholphin.services.UNLIMITED_BITRATE
 import com.github.damontecres.wholphin.services.UserPreferencesService
 import com.github.damontecres.wholphin.ui.formatBitrate
 import com.github.damontecres.wholphin.ui.gt
@@ -227,6 +228,20 @@ class PlaybackViewModel
         internal lateinit var itemId: UUID
         internal lateinit var currentItem: PlaylistItem
         internal var forceTranscoding: Boolean = false
+        /** The provider URL behind the current live channel, when Jellyfin supplied one. */
+        private var liveDirectUrl: String? = null
+
+        /** When the current title was started, used to tell a failed open from a finished film. */
+        private var playbackStartedAtMs: Long = 0L
+
+        /** Transcoding needs the global switch or an explicit per-title override. */
+        private val transcodingAllowed: Boolean
+            get() =
+                this::preferences.isInitialized &&
+                    PlaybackSourcePolicy.allowsTranscoding(
+                        forceTranscoding,
+                        preferences.appPreferences.playbackPreferences.allowTranscoding,
+                    )
         private var activityListener: TrackActivityPlaybackListener? = null
         private var trackChangeListener: TracksChangedListener? = null
         private val jobs = mutableListOf<Job>()
@@ -742,10 +757,15 @@ class PlaybackViewModel
                 }
 
                 val chapters = Chapter.fromDto(base)
+                liveDirectUrl = null
                 _state.update {
                     it.copy(
                         currentItemPlayback = itemPlayback,
                         currentPlayback = null,
+                        isLiveTv = isLiveTv,
+                        liveDirectSource = false,
+                        liveDirectSourceAvailable = false,
+                        transcodingAllowed = transcodingAllowed,
                     )
                 }
                 updateCurrentMedia {
@@ -769,6 +789,7 @@ class PlaybackViewModel
                         enableDirectStream = !forceTranscoding,
                     )
                     player.prepare()
+                    playbackStartedAtMs = SystemClock.elapsedRealtime()
                     player.play()
                     // A guest opening the host's title must not resume a room that is paused:
                     // playing it and then pausing would broadcast the unpause first.
@@ -798,6 +819,8 @@ class PlaybackViewModel
             enableDirectPlay: Boolean = !this.forceTranscoding,
             enableDirectStream: Boolean = !this.forceTranscoding,
             maxBitrate: Long = this.state.value.maxBitrate,
+            forceServer: Boolean = false,
+            allowTranscoding: Boolean = transcodingAllowed,
         ): Unit =
             withContext(WholphinDispatchers.IO) {
                 val itemId = item.id
@@ -806,7 +829,8 @@ class PlaybackViewModel
                 trackChangeListener = null
 
                 state.value.currentPlayback?.let { currentPlayback ->
-                    if (currentPlayback.item.id == item.id &&
+                    if (!forceServer &&
+                        currentPlayback.item.id == item.id &&
                         currentPlayback.playMethod == PlayMethod.DIRECT_PLAY &&
                         enableDirectPlay &&
                         state.value.maxBitrate == maxBitrate
@@ -853,12 +877,13 @@ class PlaybackViewModel
                                 subtitleStreamIndex = subtitleIndex,
                                 mediaSourceId = sourceId,
                                 alwaysBurnInSubtitleWhenTranscoding = false,
-                                maxStreamingBitrate = maxBitrate.toInt(),
+                                maxStreamingBitrate =
+                                    if (allowTranscoding) maxBitrate.toInt() else UNLIMITED_BITRATE,
                                 enableDirectPlay = enableDirectPlay,
                                 enableDirectStream = enableDirectStream,
                                 allowVideoStreamCopy = enableDirectStream,
                                 allowAudioStreamCopy = enableDirectStream,
-                                enableTranscoding = true,
+                                enableTranscoding = allowTranscoding,
                                 autoOpenLiveStream = true,
                             ),
                         )
@@ -869,6 +894,38 @@ class PlaybackViewModel
                 }
                 val source = response.mediaSources.firstOrNull()
                 source?.let { source ->
+                    val directLiveUrl =
+                        if (item.type == BaseItemKind.TV_CHANNEL) {
+                            PlaybackSourcePolicy.directLiveUrl(source)
+                        } else {
+                            null
+                        }
+                    liveDirectUrl = directLiveUrl
+                    // Reaching this path means the server is serving again. A track change that
+                    // could not be applied to the direct stream lands here, so the label has to
+                    // follow the picture.
+                    _state.update {
+                        it.copy(
+                            isLiveTv = item.type == BaseItemKind.TV_CHANNEL,
+                            liveDirectSource = false,
+                            liveDirectSourceAvailable = directLiveUrl != null,
+                            transcodingAllowed = allowTranscoding,
+                        )
+                    }
+                    if (!allowTranscoding &&
+                        source.supportsDirectPlay != true &&
+                        source.supportsDirectStream != true
+                    ) {
+                        _state.update {
+                            it.copy(
+                                loading =
+                                    LoadingState.Error(
+                                        context.getString(R.string.transcoding_disabled_error),
+                                    ),
+                            )
+                        }
+                        return@withContext
+                    }
                     val mediaUrl =
                         if (source.supportsDirectPlay) {
                             if (source.isRemote && source.path.isNotNullOrBlank()) {
@@ -1214,6 +1271,137 @@ class PlaybackViewModel
             }
         }
 
+        /**
+         * Switch a live channel between Jellyfin's relay and the provider link the server
+         * reported.
+         *
+         * The direct path leaves the server out of the media path entirely: the television opens
+         * the tuner/provider URL itself, so the picture follows this device's connection instead
+         * of the server's route. Only the currently playing channel can switch; there is nothing
+         * to switch for a file.
+         */
+        fun setLiveSource(direct: Boolean) {
+            viewModelScope.launchIO {
+                applyLiveSource(direct)
+            }
+        }
+
+        internal suspend fun applyLiveSource(direct: Boolean): Boolean {
+            val currentPlayback = state.value.currentPlayback ?: return false
+            if (currentItem.item.type != BaseItemKind.TV_CHANNEL) return false
+            if (direct) {
+                val url =
+                    liveDirectUrl
+                        ?: PlaybackSourcePolicy.directLiveUrl(currentPlayback.mediaSourceInfo)
+                if (url == null) {
+                    showToast(
+                        context,
+                        context.getString(R.string.live_source_unavailable),
+                        Toast.LENGTH_LONG,
+                    )
+                    return false
+                } else {
+                    playDirectLive(currentPlayback, url)
+                }
+            } else {
+                switchLiveToServer(currentPlayback)
+            }
+            return true
+        }
+
+        private suspend fun playDirectLive(
+            currentPlayback: CurrentPlayback,
+            url: String,
+        ) {
+            val item = currentItem.item
+            val mediaItem =
+                MediaItem
+                    .Builder()
+                    .setMediaId(item.id.toString())
+                    .setMediaMetadata(
+                        item.toMediaMetadata(
+                            imageUrlService.getItemImageUrl(
+                                item,
+                                ImageType.PRIMARY,
+                                useSeriesForPrimary = true,
+                            ),
+                        ),
+                    ).setUri(url.toUri())
+                    .apply {
+                        when (currentPlayback.mediaSourceInfo.container) {
+                            Codec.Container.HLS -> setMimeType(MimeTypes.APPLICATION_M3U8)
+                            Codec.Container.DASH -> setMimeType(MimeTypes.APPLICATION_MPD)
+                            Codec.Container.TS -> setMimeType(MimeTypes.VIDEO_MP2T)
+                        }
+                    }.build()
+            // Mark the session before preparing: an error can arrive while the player is still
+            // opening the URL, and the fallback has to know it was the direct stream that failed.
+            _state.update {
+                it.copy(
+                    liveDirectSource = true,
+                    currentPlayback = currentPlayback.copy(playMethod = PlayMethod.DIRECT_PLAY),
+                )
+            }
+            withContext(WholphinDispatchers.Main) {
+                // The track listener belongs to the server stream we are leaving.
+                trackChangeListener?.let { player.removeListener(it) }
+                trackChangeListener = null
+                player.setMediaItem(mediaItem)
+                player.prepare()
+                player.play()
+            }
+        }
+
+        /**
+         * Retry a failed direct play through the server, without changing the household switch.
+         * The error screen offers this as the way out of a title whose own profile the television
+         * cannot open, so the viewer does not have to leave the player and hunt for the title's
+         * "Play with transcoding" action.
+         */
+        fun retryWithTranscoding() {
+            viewModelScope.launch(WholphinDispatchers.Main + ExceptionHandler()) {
+                // The server can reject a source before currentPlayback exists (it is built after
+                // the compatibility check). The item is still known, so let the server choose the
+                // streams for the transcoded version rather than making the button a no-op.
+                val playback = state.value.currentPlayback
+                Timber.i("Retrying %s with transcoding", currentItem.item.id)
+                _state.update { it.copy(loading = LoadingState.Loading) }
+                changeStreams(
+                    item = currentItem.item,
+                    sourceId = playback?.mediaSourceInfo?.id,
+                    audioIndex = playback?.audioIndex,
+                    subtitleIndex = playback?.subtitleIndex,
+                    positionMs = 0,
+                    enableDirectPlay = false,
+                    enableDirectStream = false,
+                    forceServer = true,
+                    allowTranscoding = true,
+                )
+                withContext(WholphinDispatchers.Main) {
+                    player.prepare()
+                    player.play()
+                }
+            }
+        }
+
+        private suspend fun switchLiveToServer(currentPlayback: CurrentPlayback) {
+            _state.update { it.copy(liveDirectSource = false) }
+            changeStreams(
+                item = currentItem.item,
+                sourceId = currentPlayback.mediaSourceInfo.id,
+                audioIndex = currentPlayback.audioIndex,
+                subtitleIndex = currentPlayback.subtitleIndex,
+                positionMs = 0,
+                enableDirectPlay = true,
+                enableDirectStream = true,
+                forceServer = true,
+            )
+            withContext(WholphinDispatchers.Main) {
+                player.prepare()
+                player.play()
+            }
+        }
+
         internal suspend fun saveTrackSelection(
             trackIndex: Int,
             type: MediaStreamType,
@@ -1274,6 +1462,49 @@ class PlaybackViewModel
         override fun onPlaybackStateChanged(playbackState: Int) {
             if (stoppingForSleepTimer) return
             if (playbackState == Player.STATE_ENDED) {
+                val playback = state.value.currentPlayback
+                if (playback == null) {
+                    // A freshly created player (or a stale listener) can report ENDED before a
+                    // media item exists. The old code treated that as a finished film and popped
+                    // the page, so the PlaybackInfo response arrived for a screen that was already
+                    // gone and the viewer saw Play do nothing.
+                    Timber.v("Ignoring STATE_ENDED before a media item was set")
+                    return
+                }
+                // A direct stream the player cannot open (an unsupported profile, a codec the
+                // television lacks) can end before a single frame is decoded. There is no
+                // PlaybackException in that case, so the old path quietly went back to the
+                // title, which from the sofa looks like Play did nothing at all. Say what
+                // happened and point at the way out instead.
+                val elapsedMs = SystemClock.elapsedRealtime() - playbackStartedAtMs
+                val endedEarly =
+                    player.duration <= 0L ||
+                        (player.duration > 0L && player.currentPosition < player.duration - 1_000L)
+                val endedBeforeStarting =
+                    playback != null &&
+                        playback.playMethod != PlayMethod.TRANSCODE &&
+                        currentItem !is PlaylistItem.Intro &&
+                        currentItem.item.type != BaseItemKind.TV_CHANNEL &&
+                        !state.value.transcodingAllowed &&
+                        elapsedMs in 1..5_000L &&
+                        endedEarly
+                if (endedBeforeStarting) {
+                    Timber.w(
+                        "Playback ended before it started: position=%s, duration=%s, elapsed=%s",
+                        player.currentPosition,
+                        player.duration,
+                        elapsedMs,
+                    )
+                    _state.update {
+                        it.copy(
+                            loading =
+                                LoadingState.Error(
+                                    context.getString(R.string.transcoding_disabled_error),
+                                ),
+                        )
+                    }
+                    return
+                }
                 Timber.v("Playback state is STATE_ENDED")
                 viewModelScope.launchDefault {
                     when (val nextItem = state.value.nextItem()) {
@@ -1582,6 +1813,20 @@ class PlaybackViewModel
         override fun onPlayerError(error: PlaybackException) {
             Timber.e(error, "Playback error")
             val item = currentItem.item
+            // A direct provider stream failed. The server relay is the known-good path, so go
+            // back to it rather than treating the channel as off air: a dead provider link and
+            // a game that has not started are different problems.
+            if (state.value.liveDirectSource) {
+                viewModelScope.launch(WholphinDispatchers.Main + ExceptionHandler()) {
+                    showToast(
+                        context,
+                        context.getString(R.string.live_source_direct_failed),
+                        Toast.LENGTH_LONG,
+                    )
+                    state.value.currentPlayback?.let { switchLiveToServer(it) }
+                }
+                return
+            }
             // A pre-placed channel is a real channel whose stream does not exist yet, so the
             // server rejects the segment (404/500) rather than the playback request. Falling
             // back to transcoding cannot help — there is nothing to transcode — and it ended
@@ -1616,6 +1861,18 @@ class PlaybackViewModel
                         }
 
                         PlayMethod.DIRECT_STREAM, PlayMethod.DIRECT_PLAY -> {
+                            if (!transcodingAllowed) {
+                                _state.update {
+                                    it.copy(
+                                        loading =
+                                            LoadingState.Error(
+                                                context.getString(R.string.transcoding_disabled_error),
+                                                error,
+                                            ),
+                                    )
+                                }
+                                return@launch
+                            }
                             Timber.w("Playback error during ${it.playMethod}, falling back to transcoding")
                             val currentPlayback = state.value.currentPlayback
                             if (currentPlayback == null) {

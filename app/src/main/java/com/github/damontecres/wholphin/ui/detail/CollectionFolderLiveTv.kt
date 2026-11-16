@@ -226,6 +226,7 @@ fun CollectionFolderLiveTv(
                     LiveTvHeader(
                         liveCount = liveCount,
                         nextStart = nextStart,
+                        now = now,
                         favoritesOnly = favoritesOnly,
                         sportsOnly = sportsOnly,
                         liveOnly = liveOnly,
@@ -320,6 +321,11 @@ fun CollectionFolderLiveTv(
 private val liveTvHeaderTime: DateTimeFormatter =
     DateTimeFormatter.ofPattern("h:mm a", Locale.getDefault())
 
+// A next game tomorrow was printed as "Next 7:15 PM" at nine at night, which reads as a time
+// that has already passed. Once the day changes, the day is part of the answer.
+private val liveTvHeaderDayTime: DateTimeFormatter =
+    DateTimeFormatter.ofPattern("EEE h:mm a", Locale.getDefault())
+
 /**
  * The band above the Live TV tabs.
  *
@@ -332,6 +338,7 @@ private val liveTvHeaderTime: DateTimeFormatter =
 private fun LiveTvHeader(
     liveCount: Int,
     nextStart: LocalDateTime?,
+    now: LocalDateTime,
     favoritesOnly: Boolean,
     sportsOnly: Boolean,
     liveOnly: Boolean,
@@ -405,8 +412,14 @@ private fun LiveTvHeader(
         }
         Spacer(Modifier.weight(1f))
         nextStart?.let {
+            val nextTime =
+                if (it.toLocalDate() == now.toLocalDate()) {
+                    it.format(liveTvHeaderTime)
+                } else {
+                    it.format(liveTvHeaderDayTime)
+                }
             Text(
-                text = stringResource(R.string.live_tv_header_next, it.format(liveTvHeaderTime)),
+                text = stringResource(R.string.live_tv_header_next, nextTime),
                 style = if (glass) GlassType.meta else MaterialTheme.typography.bodyMedium,
                 color = quiet,
             )

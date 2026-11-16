@@ -215,6 +215,38 @@ fun SeriesOverviewContent(
                     modifier = Modifier.fillMaxWidth(.6f).padding(top = 8.dp, bottom = 10.dp),
                 )
 
+                // The actions belong above the episode row. Below it they sat past the bottom
+                // of a 1080p screen: the viewer opened a show and saw artwork, episode cards
+                // cut off at the edge, and no Play button at all.
+                focusedEpisode?.let { ep ->
+                    FocusedEpisodeFooter(
+                        preferences = preferences,
+                        ep = ep,
+                        chosenStreams = chosenStreams,
+                        playOnClick = playOnClick,
+                        moreOnClick = moreOnClick,
+                        watchOnClick = {
+                            watchOnClick.invoke()
+                            episodeRowFocusRequester.tryRequestFocus()
+                        },
+                        favoriteOnClick = favoriteOnClick,
+                        buttonOnFocusChanged = {
+                            if (it.isFocused) {
+                                scope.launch {
+                                    bringIntoViewRequester.bringIntoView()
+                                }
+                            }
+                        },
+                        canDelete = canDelete.invoke(ep),
+                        onConfirmDelete = { onConfirmDelete.invoke(ep) },
+                        onChooseVersion = { onChooseVersion.invoke(ep, it) },
+                        modifier =
+                            Modifier
+                                .padding(top = 4.dp)
+                                .fillMaxWidth(),
+                    )
+                }
+
 //                key(position.seasonTabIndex) {
                 when (val eps = episodes) {
                     EpisodeList.Loading -> {
@@ -322,34 +354,6 @@ fun SeriesOverviewContent(
 //                    }
                 }
 
-                focusedEpisode?.let { ep ->
-                    FocusedEpisodeFooter(
-                        preferences = preferences,
-                        ep = ep,
-                        chosenStreams = chosenStreams,
-                        playOnClick = playOnClick,
-                        moreOnClick = moreOnClick,
-                        watchOnClick = {
-                            watchOnClick.invoke()
-                            episodeRowFocusRequester.tryRequestFocus()
-                        },
-                        favoriteOnClick = favoriteOnClick,
-                        buttonOnFocusChanged = {
-                            if (it.isFocused) {
-                                scope.launch {
-                                    bringIntoViewRequester.bringIntoView()
-                                }
-                            }
-                        },
-                        canDelete = canDelete.invoke(ep),
-                        onConfirmDelete = { onConfirmDelete.invoke(ep) },
-                        onChooseVersion = { onChooseVersion.invoke(ep, it) },
-                        modifier =
-                            Modifier
-                                .padding(top = 4.dp)
-                                .fillMaxWidth(),
-                    )
-                }
             }
 
             val (guestStars, castAndCrew) =

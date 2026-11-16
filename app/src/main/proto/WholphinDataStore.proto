@@ -94,6 +94,10 @@ message PlaybackPreferences {
   string external_player = 24;
   bool cinema_mode = 25;
   DpadSeekMode dpad_seek_mode = 26;
+  // Off by default: the server sends the file as it is stored and never re-encodes it behind the
+  // viewer's back. A title this device cannot decode fails with a clear message instead of
+  // silently spending the server's CPU. The per-title "Play with transcoding" action still wins.
+  bool allow_transcoding = 27;
 }
 
 enum DpadSeekMode {

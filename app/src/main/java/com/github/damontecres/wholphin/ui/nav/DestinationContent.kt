@@ -12,6 +12,7 @@ import com.github.damontecres.wholphin.preferences.PlayerBackend
 import com.github.damontecres.wholphin.preferences.UserPreferences
 import com.github.damontecres.wholphin.ui.components.ItemGrid
 import com.github.damontecres.wholphin.ui.components.LicenseInfo
+import com.github.damontecres.wholphin.ui.bugreport.BugReportPage
 import com.github.damontecres.wholphin.ui.data.MovieSortOptions
 import com.github.damontecres.wholphin.ui.data.rememberSortOptions
 import com.github.damontecres.wholphin.ui.detail.CollectionFolderGeneric
@@ -381,6 +382,10 @@ fun DestinationContent(
 
         Destination.Debug -> {
             DebugPage(preferences, modifier)
+        }
+
+        Destination.BugReports -> {
+            BugReportPage(preferences, modifier)
         }
 
         Destination.Discover -> {

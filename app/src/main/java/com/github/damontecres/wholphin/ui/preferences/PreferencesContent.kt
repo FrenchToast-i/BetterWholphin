@@ -8,6 +8,7 @@ import androidx.compose.animation.slideInHorizontally
 import androidx.compose.animation.slideOutHorizontally
 import androidx.compose.foundation.Image
 import androidx.compose.foundation.background
+import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.interaction.MutableInteractionSource
 import androidx.compose.foundation.interaction.collectIsFocusedAsState
@@ -438,7 +439,7 @@ fun PreferencesContent(
                             text = stringResource(group.title).uppercase(),
                             style =
                                 if (glass) GlassType.sectionLabel else MaterialTheme.typography.titleMedium,
-                            color = if (glass) Color.White.copy(alpha = 0.54f) else MaterialTheme.colorScheme.onSurface,
+                            color = if (glass) Color.White.copy(alpha = 0.72f) else MaterialTheme.colorScheme.onSurface,
                             textAlign = TextAlign.Start,
                             modifier =
                                 Modifier
@@ -1134,21 +1135,31 @@ private fun SettingsRail(
             val interactionSource = remember { MutableInteractionSource() }
             val focused by interactionSource.collectIsFocusedAsState()
             val active = index == selected
+            val shape = RoundedCornerShape(GlassTokens.rowRadius)
             Text(
                 text = stringResource(group.title),
                 style = GlassType.settingsTitle,
-                color = if (active) Color.White else Color.White.copy(alpha = 0.62f),
+                // On a bright frame the rail's 62% white was barely a smudge, and focusing a
+                // section only changed the fill by nine percent. The label now becomes white
+                // on focus and gains a rim, so the remote's position is readable from the sofa.
+                color = if (active || focused) Color.White else Color.White.copy(alpha = 0.78f),
                 maxLines = 1,
                 overflow = TextOverflow.Ellipsis,
                 modifier =
                     Modifier
                         .fillMaxWidth()
-                        .clip(RoundedCornerShape(GlassTokens.rowRadius))
+                        .clip(shape)
                         .background(
                             when {
                                 active -> Color.White.copy(alpha = 0.14f)
-                                focused -> Color.White.copy(alpha = 0.09f)
+                                focused -> Color.White.copy(alpha = 0.20f)
                                 else -> Color.Transparent
+                            },
+                        ).then(
+                            if (focused) {
+                                Modifier.border(1.dp, Color.White.copy(alpha = 0.70f), shape)
+                            } else {
+                                Modifier
                             },
                         ).then(
                             if (index == 0 && focusRequester != null) {

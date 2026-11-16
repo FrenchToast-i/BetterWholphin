@@ -44,6 +44,9 @@ fun FocusedEpisodeHeader(
                     it,
                     ep.timeRemainingOrRuntime,
                     Modifier.padding(start = HeaderUtils.startPadding),
+                    // The pane is narrower than the page: as a Row the last detail is clipped
+                    // past its edge and leaves a bullet with nothing after it.
+                    oneLine = LocalLiquidGlass.current,
                 )
             }
 

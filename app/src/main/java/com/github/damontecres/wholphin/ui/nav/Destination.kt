@@ -183,4 +183,7 @@ sealed class Destination(
 
     @Serializable
     data object Debug : Destination(true)
+
+    @Serializable
+    data object BugReports : Destination(true)
 }

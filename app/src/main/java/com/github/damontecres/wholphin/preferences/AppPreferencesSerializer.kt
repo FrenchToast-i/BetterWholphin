@@ -42,6 +42,7 @@ class AppPreferencesSerializer
                                 skipBackOnResumeSeconds =
                                     AppPreference.SkipBackOnResume.defaultValue.seconds.inWholeMilliseconds
                                 maxBitrate = AppPreference.DEFAULT_BITRATE
+                                allowTranscoding = AppPreference.AllowTranscoding.defaultValue
                                 skipIntros = AppPreference.SkipIntros.defaultValue
                                 skipOutros = AppPreference.SkipOutros.defaultValue
                                 skipCommercials = AppPreference.SkipCommercials.defaultValue

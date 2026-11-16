@@ -4,6 +4,8 @@ import androidx.annotation.StringRes
 import androidx.compose.foundation.background
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Column
+import androidx.compose.foundation.layout.ExperimentalLayoutApi
+import androidx.compose.foundation.layout.FlowRow
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.padding
@@ -60,6 +62,7 @@ fun VideoStreamDetails(
     modifier,
 )
 
+@OptIn(ExperimentalLayoutApi::class)
 @Composable
 fun VideoStreamDetails(
     source: MediaSourceInfo?,
@@ -70,8 +73,12 @@ fun VideoStreamDetails(
     modifier: Modifier = Modifier,
 ) {
     val resources = LocalResources.current
-    Row(
+    // The detail pane is narrow. A Row measured the last chip with whatever width was left —
+    // often two pixels — so a long subtitle label collapsed to a bare CC icon. Let the chips
+    // wrap instead of squeezing the one that carries the language.
+    FlowRow(
         horizontalArrangement = Arrangement.spacedBy(4.dp),
+        verticalArrangement = Arrangement.spacedBy(4.dp),
         modifier = modifier,
     ) {
         val video =

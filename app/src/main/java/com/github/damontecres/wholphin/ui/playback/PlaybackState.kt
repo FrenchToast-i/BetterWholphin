@@ -25,6 +25,14 @@ data class PlaybackState(
     val playlistIndex: Int = 0,
     val playlist: Playlist = Playlist(emptyList()),
     val maxBitrate: Long = -1L,
+    /** A tuner channel is the only thing that has a provider URL behind it. */
+    val isLiveTv: Boolean = false,
+    /** True while the player is reading the provider's own link instead of Jellyfin's relay. */
+    val liveDirectSource: Boolean = false,
+    /** The PlaybackInfo response carried a provider URL this device can open itself. */
+    val liveDirectSourceAvailable: Boolean = false,
+    /** The server may re-encode this title; the bitrate menu only means something then. */
+    val transcodingAllowed: Boolean = false,
 ) {
     val hasNext: Boolean get() = (playlistIndex + 1) < playlist.items.size
     val hasPrevious: Boolean get() = playlistIndex > 0

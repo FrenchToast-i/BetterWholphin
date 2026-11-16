@@ -38,7 +38,10 @@ import com.github.damontecres.wholphin.ui.detail.PlaylistDialog
 import com.github.damontecres.wholphin.ui.detail.music.addToQueue
 import com.github.damontecres.wholphin.ui.launchDefault
 import com.github.damontecres.wholphin.ui.launchIO
+import com.github.damontecres.wholphin.ui.main.GlassHomeHeader
 import com.github.damontecres.wholphin.ui.main.HomePageContent
+import com.github.damontecres.wholphin.ui.main.HomePageHeader
+import com.github.damontecres.wholphin.ui.theme.LocalLiquidGlass
 import com.github.damontecres.wholphin.ui.nav.Destination
 import com.github.damontecres.wholphin.ui.rememberPosition
 import com.github.damontecres.wholphin.ui.toBaseItems
@@ -448,6 +451,36 @@ fun RecommendedContent(
                 showLogo = preferences.appPreferences.interfacePreferences.showLogos,
                 showViewMore = true,
                 onClickViewMore = viewModel::onClickViewMore,
+                // The library's Recommended tab is a viewing surface, not just a poster wall:
+                // its header describes the next episode, so it has to carry the way to start
+                // that episode. The default header is bare type, which left the page with a
+                // synopsis and no Play button at all; in glass mode the same slot uses the
+                // hero pane, whose fixed height also keeps the Next Up row on screen.
+                headerComposable = { focusedItem ->
+                    val playable =
+                        focusedItem?.type in
+                            listOf(
+                                BaseItemKind.MOVIE,
+                                BaseItemKind.EPISODE,
+                                BaseItemKind.SERIES,
+                                BaseItemKind.SEASON,
+                            )
+                    if (LocalLiquidGlass.current && playable) {
+                        GlassHomeHeader(
+                            item = focusedItem,
+                            showLogo = preferences.appPreferences.interfacePreferences.showLogos,
+                            onPlay = { viewModel.navigationManager.navigateTo(Destination.Playback(it)) },
+                            onDetails = { viewModel.navigationManager.navigateTo(it.destination()) },
+                            modifier = HeaderUtils.glassModifier,
+                        )
+                    } else {
+                        HomePageHeader(
+                            item = focusedItem,
+                            showLogo = preferences.appPreferences.interfacePreferences.showLogos,
+                            modifier = HeaderUtils.modifier,
+                        )
+                    }
+                },
                 modifier = modifier,
             )
         }

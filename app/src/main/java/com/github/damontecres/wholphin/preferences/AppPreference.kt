@@ -399,6 +399,26 @@ sealed interface AppPreference<Pref, T> {
                 valueToIndex = { it.ordinal },
             )
 
+        /**
+         * The one switch that decides whether the server may re-encode anything.
+         *
+         * Off by default: the household plays files it already owns, and a transcode spends the
+         * server's CPU and lowers the picture. A title that genuinely cannot direct play should
+         * say so rather than quietly convert; "Play with transcoding" on the item remains the
+         * deliberate, per-title escape hatch.
+         */
+        val AllowTranscoding =
+            AppSwitchPreference<AppPreferences>(
+                title = R.string.allow_transcoding,
+                defaultValue = false,
+                getter = { it.playbackPreferences.allowTranscoding },
+                setter = { prefs, value ->
+                    prefs.updatePlaybackPreferences { allowTranscoding = value }
+                },
+                summaryOn = R.string.allow_transcoding_on,
+                summaryOff = R.string.allow_transcoding_off,
+            )
+
         val Ac3Supported =
             AppSwitchPreference<AppPreferences>(
                 title = R.string.ac3_supported,
@@ -766,6 +786,13 @@ sealed interface AppPreference<Pref, T> {
             AppDestinationPreference<AppPreferences>(
                 title = R.string.advanced_settings,
                 destination = Destination.Settings(PreferenceScreenOption.ADVANCED),
+            )
+
+        val BugReports =
+            AppDestinationPreference<AppPreferences>(
+                title = R.string.bug_reports,
+                summary = R.string.bug_reports_summary,
+                destination = Destination.BugReports,
             )
 
         val UserProfileSettings =
@@ -1376,6 +1403,7 @@ val basicPreferences =
                     AppPreference.SkipBack,
                     AppPreference.SkipBackOnResume,
                     AppPreference.PlayThemeMusic,
+                    AppPreference.AllowTranscoding,
                     AppPreference.SubtitleStyle,
                 ),
         ),
@@ -1428,6 +1456,7 @@ val basicPreferences =
             description = R.string.settings_group_more,
             preferences =
                 listOf(
+                    AppPreference.BugReports,
                     AppPreference.AdvancedSettings,
                 ),
         ),

@@ -665,6 +665,58 @@ a setting it never opens.
   list doubles as a now/next board without a second request. Two lines for the name: a sports
   tuner's channel name *is* the fixture, and one line sliced it to "Washington Comm…".
 
+## Playback sources and transcoding
+
+- **Transcoding is off unless the household turns it on.** `PlaybackPreferences.allow_transcoding`
+  (proto 27) defaults to false and rides on every `PlaybackInfo` request as
+  `enableTranscoding`. Direct play and direct stream/remux stay allowed: they send the file as it
+  is stored, and a remux is not a re-encode. A title that needs a real transcode stops with a
+  sentence naming the switch instead of quietly converting.
+- **The bitrate cap is ignored while transcoding is off.** `DeviceProfileService` and the
+  `PlaybackInfo` DTO both report `UNLIMITED_BITRATE` in that mode. A 100 Mbps cap would otherwise
+  mark a large remux incompatible and offer exactly the conversion that was forbidden.
+  The player's *Max bitrate* row is hidden with it: the request no longer carries a meaningful
+  ceiling, so leaving the row on the settings deck would be a control that does nothing.
+- **"Play with transcoding" still wins for one title.** It is the deliberate escape hatch from a
+  detail page; the switch is the household default. `PlaybackSourcePolicy.allowsTranscoding` is
+  the single rule (`force || preference`), unit tested.
+- **The player's settings deck carries "Live stream source" for tuner channels.** Jellyfin's
+  `MediaSourceInfo.path` is the provider/tuner URL, so `PlaybackSourcePolicy.directLiveUrl` takes
+  it only when it is http(s). Choosing *Direct from provider* rebuilds the media item from that
+  URL, **not** the server's `/videos/...` relay: the television opens the stream itself, so the
+  picture follows its own connection instead of the server's route. *Via Jellyfin* switches back.
+- The direct path is best-effort and honest: the row is disabled (with the reason) when the
+  server did not return a provider link, the first player error while direct toasts "Direct
+  stream failed; using Jellyfin" and rebuilds the server relay, and only then does the
+  channel-not-streaming path apply. Direct mode is a session choice, not a stored preference; a
+  new item starts on Jellyfin.
+- `DefaultDataSource.Factory` is what makes this safe: the video player never attaches the
+  Jellyfin `Authorization` header, so a provider URL cannot receive the household's server token.
+- **A failed direct play is a screen, not a silent bounce.** A freshly created player can report
+  `STATE_ENDED` before a media item exists; treating that as a finished film popped the page
+  before `PlaybackInfo` returned, so the viewer saw Play do nothing. `STATE_ENDED` is ignored
+  until `currentPlayback` exists. A real direct failure lands on `PlaybackErrorPage`, whose
+  primary action is **Play with transcoding** (focused on entry). The retry re-requests with direct
+  play and direct stream disabled, and can build the request from the known item when the
+  compatibility check rejected the source before a `CurrentPlayback` was made.
+
+## Living-room pass
+
+- Settings rail labels are 78% white and turn white with a 20% fill and a white rim on focus; the
+  62%/9% version disappeared over a bright frame and made the remote's position unreadable.
+  Group headings are 72% white for the same reason.
+- `VideoStreamDetails` is a `FlowRow` in the glass detail pane. As a `Row`, the last chip was
+  measured with whatever width remained (often 2px), so “English PGS (+3)” collapsed to a bare CC
+  icon; the chips now wrap and keep their labels.
+- The series overview's episode actions sit **above** the episode row. Below it, on a 1080p
+  screen, the Play button was past the bottom edge while the focused episode card was sliced.
+- The TV library's **Recommended** tab uses `GlassHomeHeader` for its focused item, not the bare
+  `HomePageHeader`: the bare header described the next episode with no way to start it, so the
+  page offered a synopsis and no Play button. The glass hero is 160dp — the tallest this content
+  fits — because at 178dp it pushed the Next Up posters past the bottom edge of a 1080p screen.
+- Live TV's header says “Next Mon 7:15 PM” once the next game is not today; a bare “Next 7:15
+  PM” at nine at night reads as a time that has already passed.
+
 ## Watch together (SyncPlay)
 
 - **Watch together is the app's own room, not a second player.** `WatchPartyService` (singleton)
@@ -953,3 +1005,24 @@ a setting it never opens.
   opaque elevation surface, and white ink rather than the glass theme's dark `onSurface` — dark
   type on the smoked slab was invisible. `NextUpCard` takes the same ink so the countdown and the
   play glyph match the copy beside them.
+
+## Bug reports
+
+- The recorder is a **toggle**, not a form: one press starts a MediaProjection recording, the
+  next stops it, packs the clip, the app's logcat and the device details into one zip, and
+  uploads it. A television remote has no debug menu, but it has spare keys: a key remapper can
+  send `com.github.damontecres.wholphin.BUG_REPORT_TOGGLE` and the viewer gets a dedicated button.
+  The receiver opens `MainActivity` on the first press (Android always asks for the projection
+  grant in front of the user) and stops the service directly on the second.
+- The zip goes to a shared `bug-reports` GitHub release, uploaded as a release asset. Issues
+  cannot carry a fifty-megabyte clip; release assets are the one binary endpoint a fine-grained
+  token reaches with `contents: write` alone. `gh release download bug-reports` collects them.
+- The token is the viewer's own fine-grained token, stored in the app's private preferences and
+  never in source, resources or BuildConfig. A token in an APK is a token everybody has. The
+  repository defaults to `FrenchToast-i/BetterWholphin`; with no token (or auto-upload off) the
+  zip stays in `cache/bug_reports` and the settings page can share it.
+- The service must be a foreground service of type `mediaProjection` and call `startForeground`
+  **before** `getMediaProjection`, or Android 14 throws. The clip is 1280-wide H.264 at 4 Mbps:
+  legible UI text at ten feet, small enough for a domestic upload.
+- Failing to upload never loses the report: the zip remains on disk and the status says why.
+- The page lives at More → Bug reports; it also shows the last report and a share action.
