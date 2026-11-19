@@ -61,9 +61,13 @@ fun Button(
             containerColor = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.8f),
             contentColor = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.8f),
             focusedContainerColor = MaterialTheme.colorScheme.onSurface,
-            focusedContentColor = MaterialTheme.colorScheme.inverseOnSurface,
+            // Glass maps onSurface to white and inverseOnSurface to white as well (focused list
+            // rows are a dark slab with white type). An unfocused default button therefore
+            // became white type on a white focused fill and disappeared exactly when the D-pad
+            // reached it. The focused fill here is always light, so its ink is always black.
+            focusedContentColor = if (LocalLiquidGlass.current) Color.Black else MaterialTheme.colorScheme.inverseOnSurface,
             pressedContainerColor = MaterialTheme.colorScheme.onSurface,
-            pressedContentColor = MaterialTheme.colorScheme.inverseOnSurface,
+            pressedContentColor = if (LocalLiquidGlass.current) Color.Black else MaterialTheme.colorScheme.inverseOnSurface,
             disabledContainerColor = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.4f),
             disabledContentColor = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.4f),
         ),

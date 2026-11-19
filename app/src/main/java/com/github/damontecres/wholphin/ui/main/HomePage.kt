@@ -37,7 +37,6 @@ import androidx.compose.ui.focus.onFocusChanged
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.input.key.KeyEvent
 import androidx.compose.ui.input.key.onKeyEvent
-import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.text.style.TextOverflow
@@ -87,6 +86,7 @@ import com.github.damontecres.wholphin.ui.playback.playable
 import com.github.damontecres.wholphin.ui.playback.scale
 import com.github.damontecres.wholphin.ui.rememberPosition
 import com.github.damontecres.wholphin.ui.theme.GlassPanel
+import com.github.damontecres.wholphin.ui.theme.GlassTokens
 import com.github.damontecres.wholphin.ui.theme.GlassType
 import com.github.damontecres.wholphin.ui.theme.LocalLiquidGlass
 import com.github.damontecres.wholphin.ui.tryRequestFocus
@@ -107,25 +107,36 @@ fun HomePage(
     viewModel: HomeViewModel = hiltViewModel(),
     playlistViewModel: AddPlaylistViewModel = hiltViewModel(),
 ) {
-    val context = LocalContext.current
     LifecycleStartEffect(Unit) {
         viewModel.init()
         onStopOrDispose { }
     }
-    val state by viewModel.state.collectAsState()
-    val loading = state.loadingState
-    val refreshing = state.refreshState
-    val homeRows = state.homeRows
+    val homeState by viewModel.state.collectAsState()
+    val forYouViewModel: ForYouViewModel = hiltViewModel()
+    val forYouState by forYouViewModel.state.collectAsStateWithLifecycle()
+    val loading = homeState.loadingState
+    val homeRows = homeState.homeRows
+    val pageModifier =
+        if (LocalLiquidGlass.current) {
+            modifier.padding(top = GlassTokens.contentTop)
+        } else {
+            modifier
+        }
+
+    LifecycleStartEffect(Unit) {
+        forYouViewModel.refresh()
+        onStopOrDispose { }
+    }
 
     when (val state = loading) {
         is LoadingState.Error -> {
-            ErrorMessage(state, modifier)
+            ErrorMessage(state, pageModifier)
         }
 
         LoadingState.Loading,
         LoadingState.Pending,
         -> {
-            LoadingPage(modifier)
+            LoadingPage(pageModifier)
         }
 
         LoadingState.Success -> {
@@ -203,12 +214,6 @@ fun HomePage(
                             )
                     }
                 }
-            val onClickPlay =
-                remember {
-                    { _: RowColumn, item: BaseItem ->
-                        viewModel.navigationManager.navigateTo(Destination.Playback(item))
-                    }
-                }
             val onClickViewMore =
                 remember {
                     { _: RowColumn, row: HomeRowLoadingState.Success ->
@@ -218,23 +223,30 @@ fun HomePage(
                     }
                 }
 
-            HomePageContent(
+            RenovatedHomeContent(
                 homeRows = homeRows,
-                position = position,
+                rowConfigs = homeState.settings.rows.map { it.config },
                 onFocusPosition = onFocusPosition,
                 onClickItem = onClickItem,
                 onLongClickItem = onLongClickItem,
-                onClickPlay = onClickPlay,
-                loadingState = refreshing,
-                showClock = preferences.appPreferences.interfacePreferences.showClock,
+                onPlayItem = { item ->
+                    val destination =
+                        if (item.type == BaseItemKind.PROGRAM || item.type == BaseItemKind.TV_PROGRAM) {
+                            item.data.channelId
+                                ?.let { Destination.Playback(itemId = it, positionMs = 0L) }
+                                ?: item.destination()
+                        } else {
+                            Destination.Playback(item)
+                        }
+                    viewModel.navigationManager.navigateTo(destination)
+                },
+                onOpenItem = { item ->
+                    viewModel.navigationManager.navigateTo(item.destination())
+                },
                 onUpdateBackdrop = viewModel::updateBackdrop,
-                showLogo = preferences.appPreferences.interfacePreferences.showLogos,
+                forYouState = forYouState,
                 showViewMore = true,
                 onClickViewMore = onClickViewMore,
-                // The home page is a stack of the viewer's own rows. Other callers (a series'
-                // recommendations, the home settings preview) still want the focused-item
-                // header, so the page opts out rather than the component dropping it.
-                showHeader = false,
                 modifier = modifier,
             )
             overviewDialog?.let { info ->

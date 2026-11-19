@@ -76,6 +76,10 @@ fun SearchFieldRow(
     modifier: Modifier = Modifier,
     showVoiceSearch: Boolean = true,
     downFocusRequester: FocusRequester? = null,
+    /** Glass-only placeholder; classic fields use the platform hint. */
+    placeholder: String? = null,
+    /** Stretch the field through the row instead of keeping its standalone search width. */
+    fillWidth: Boolean = false,
     onOpenViewOptions: (() -> Unit)? = null,
 ) {
     val focusManager = LocalFocusManager.current
@@ -148,7 +152,7 @@ fun SearchFieldRow(
                 if (glass) {
                     {
                         Text(
-                            text = stringResource(R.string.glass_search_placeholder),
+                            text = placeholder ?: stringResource(R.string.glass_search_placeholder),
                             style = GlassType.tab,
                             color = Color.White.copy(alpha = 0.55f),
                         )
@@ -159,6 +163,7 @@ fun SearchFieldRow(
             glass = glass,
             modifier =
                 Modifier
+                    .then(if (fillWidth) Modifier.weight(1f) else Modifier)
                     .then(
                         if (downFocusRequester != null) {
                             // Below the field the nearest chip is "Clear" (it sits at the end of

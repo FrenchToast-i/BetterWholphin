@@ -8,6 +8,7 @@ import androidx.compose.animation.core.animateIntOffsetAsState
 import androidx.compose.animation.core.spring
 import androidx.compose.animation.expandVertically
 import androidx.compose.animation.shrinkVertically
+import androidx.compose.foundation.background
 import androidx.compose.foundation.focusGroup
 import androidx.compose.foundation.interaction.MutableInteractionSource
 import androidx.compose.foundation.interaction.collectIsFocusedAsState
@@ -150,6 +151,11 @@ class NavDrawerViewModel
                     )
                 }
 
+                NavDrawerItem.Sports -> {
+                    setIndex(index)
+                    navigationManager.navigateToFromDrawer(Destination.Sports)
+                }
+
                 is ServerNavDrawerItem -> {
                     setIndex(index)
                     navigationManager.navigateToFromDrawer(item.destination)
@@ -182,6 +188,7 @@ class NavDrawerViewModel
                             is NavDrawerItem.Tonight -> Destination.Tonight
                             is NavDrawerItem.Favorites -> Destination.Favorites
                             is NavDrawerItem.Discover -> Destination.Discover
+                            is NavDrawerItem.Sports -> Destination.Sports
                             else -> null
                         }
                     }
@@ -263,6 +270,19 @@ sealed interface NavDrawerItem {
             get() = "a_discover"
 
         override fun name(context: Context): String = context.getString(R.string.discover)
+    }
+
+    /**
+     * The separate Sports page.
+     *
+     * It is only added when the viewer actually has a Live TV library, and is inserted directly
+     * after it, so the two halves of the tuner sit together in the bar.
+     */
+    object Sports : NavDrawerItem {
+        override val id: String
+            get() = "a_sports"
+
+        override fun name(context: Context): String = context.getString(R.string.sports)
     }
 }
 
@@ -852,7 +872,17 @@ private fun GlassTopBarScaffold(
     // unpinned from the drawer.
     val topBar = preferences.appPreferences.interfacePreferences.topBarPreferences
     val surpriseViewModel: SurpriseViewModel = hiltViewModel()
-    Box(modifier = modifier.fillMaxSize()) {
+    // Live TV is a listing page: it gets the bar, not a band of empty artwork above the schedule.
+    // The bar keeps every control but shrinks to 38dp, and the page starts immediately under it.
+    val liveTvGuide =
+        destination is Destination.MediaItem && destination.collectionType == CollectionType.LIVETV
+    val compactTop = 56.dp
+    Box(
+        modifier =
+            modifier
+                .fillMaxSize()
+                .background(if (liveTvGuide) Color.Black else Color.Unspecified),
+    ) {
         DestinationContent(
             destination = destination,
             preferences = preferences,
@@ -861,9 +891,17 @@ private fun GlassTopBarScaffold(
                 Modifier
                     .fillMaxSize()
                     .padding(
-                        start = GlassTokens.screenInset,
-                        end = GlassTokens.screenInset,
-                        top = GlassTokens.contentTop,
+                        start = if (liveTvGuide) 0.dp else GlassTokens.screenInset,
+                        end = if (liveTvGuide) 0.dp else GlassTokens.screenInset,
+                        // Home owns its top inset so its content can scroll under the floating bar.
+                        // Live TV leaves only the compact bar's height; every other page keeps the
+                        // padded shell.
+                        top =
+                            when {
+                                liveTvGuide -> compactTop
+                                destination is Destination.Home -> 0.dp
+                                else -> GlassTokens.contentTop
+                            },
                     ),
         )
         GlassTopBar(
@@ -930,12 +968,13 @@ private fun GlassTopBarScaffold(
                 viewModel.navigationManager.navigateToFromDrawer(Destination.Search())
             },
             onPlaySomethingClick = surpriseViewModel::playSomething,
+            miniBar = liveTvGuide,
             modifier =
                 Modifier
                     .align(Alignment.TopCenter)
                     .padding(
                         horizontal = GlassTokens.screenInset,
-                        vertical = GlassTokens.barTopInset,
+                        vertical = if (liveTvGuide) 8.dp else GlassTokens.barTopInset,
                     ),
         )
     }
@@ -965,6 +1004,10 @@ internal fun rememberNavDrawerItemIcon(library: NavDrawerItem): Pair<Int, Boolea
 
                 NavDrawerItem.Discover -> {
                     R.string.fa_magnifying_glass_plus
+                }
+
+                NavDrawerItem.Sports -> {
+                    R.string.fa_football
                 }
 
                 is ServerNavDrawerItem -> {

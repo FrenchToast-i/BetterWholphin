@@ -154,6 +154,15 @@ sealed class Destination(
     @Serializable
     data object Favorites : Destination(false)
 
+    /**
+     * The tuner's fixture board, beside Live TV rather than inside its tab strip.
+     *
+     * Live TV is now the EPG. Sport is a different question (what is on, what is next, which
+     * day), so it gets its own destination and never draws the guide.
+     */
+    @Serializable
+    data object Sports : Destination(false)
+
     @Serializable
     data object Discover : Destination(false)
 

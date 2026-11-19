@@ -209,11 +209,12 @@ fun GlassHomeHeader(
  * clearest focus signal at ten feet.
  */
 @Composable
-private fun GlassActionButton(
+internal fun GlassActionButton(
     text: String,
     icon: ImageVector,
     onClick: () -> Unit,
     primary: Boolean,
+    modifier: Modifier = Modifier,
 ) {
     // The secondary action is smoked glass rather than white frost: a 20% white fill disappears
     // onto a bright backdrop, which is exactly where a hero most often sits.
@@ -222,6 +223,7 @@ private fun GlassActionButton(
     val shape = RoundedCornerShape(GlassTokens.pillRadius)
     Surface(
         onClick = onClick,
+        modifier = modifier,
         shape = ClickableSurfaceDefaults.shape(shape = shape),
         colors =
             ClickableSurfaceDefaults.colors(

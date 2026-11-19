@@ -56,6 +56,12 @@ fun ProgramDialog(
     onWatch: (BaseItem) -> Unit,
     onRecord: (BaseItem, series: Boolean) -> Unit,
     onCancelRecord: (BaseItem, series: Boolean) -> Unit,
+    channelName: String? = null,
+    isFavoriteChannel: Boolean = false,
+    isReminded: Boolean = false,
+    onFavoriteChannel: (() -> Unit)? = null,
+    onOpenGuide: (() -> Unit)? = null,
+    onRemind: ((Boolean) -> Unit)? = null,
 ) {
     val context = LocalContext.current
     Dialog(
@@ -132,7 +138,7 @@ fun ProgramDialog(
                                 DateUtils.FORMAT_SHOW_TIME,
                             )
                         Text(
-                            text = time,
+                            text = listOfNotNull(channelName, time).joinToString("  ·  "),
                             color = if (glass) Color.White else MaterialTheme.colorScheme.onSurface,
                             style = MaterialTheme.typography.titleSmall,
                         )
@@ -164,7 +170,7 @@ fun ProgramDialog(
                                     ) {
                                         Icon(
                                             imageVector = Icons.Default.PlayArrow,
-                                            contentDescription = stringResource(R.string.delete),
+                                            contentDescription = null,
                                         )
                                         Text(
                                             text = stringResource(R.string.watch_live),
@@ -172,7 +178,7 @@ fun ProgramDialog(
                                     }
                                 }
                             }
-                            if (canRecord) {
+                            if (canRecord || onFavoriteChannel != null || onOpenGuide != null || onRemind != null) {
                                 val recordFocusRequester = remember { FocusRequester() }
                                 LazyRow(
                                     horizontalArrangement =
@@ -185,7 +191,7 @@ fun ProgramDialog(
                                             .fillMaxWidth()
                                             .focusRestorer(recordFocusRequester),
                                 ) {
-                                    if (dto.isSeries ?: false) {
+                                    if ((dto.isSeries ?: false) && canRecord) {
                                         item {
                                             TextButton(
                                                 onClick = {
@@ -226,7 +232,7 @@ fun ProgramDialog(
                                             }
                                         }
                                     }
-                                    if (dto.endDate?.isAfter(LocalDateTime.now()) ?: true) {
+                                    if (canRecord && (dto.endDate?.isAfter(LocalDateTime.now()) ?: true)) {
                                         // Only show program specific recording button if it hasn't finished yet
                                         item {
                                             TextButton(
@@ -272,6 +278,41 @@ fun ProgramDialog(
                                                             },
                                                     )
                                                 }
+                                            }
+                                        }
+                                    }
+                                    onRemind?.let { remind ->
+                                        if (dto.startDate?.isAfter(LocalDateTime.now()) == true) {
+                                            item {
+                                                TextButton(
+                                                    onClick = { remind(!isReminded) },
+                                                ) {
+                                                    Text(
+                                                        text =
+                                                            stringResource(
+                                                                if (isReminded) R.string.live_tv_reminder_set else R.string.live_tv_remind_me,
+                                                            ),
+                                                    )
+                                                }
+                                            }
+                                        }
+                                    }
+                                    onFavoriteChannel?.let { favorite ->
+                                        item {
+                                            TextButton(onClick = favorite) {
+                                                Text(
+                                                    text =
+                                                        stringResource(
+                                                            if (isFavoriteChannel) R.string.remove_favorite else R.string.add_favorite,
+                                                        ),
+                                                )
+                                            }
+                                        }
+                                    }
+                                    onOpenGuide?.let { openGuide ->
+                                        item {
+                                            TextButton(onClick = openGuide) {
+                                                Text(stringResource(R.string.live_tv_open_in_guide))
                                             }
                                         }
                                     }

@@ -15,6 +15,7 @@ import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
+import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
@@ -23,10 +24,13 @@ import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableIntStateOf
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.rememberCoroutineScope
+import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.runtime.setValue
+import androidx.compose.runtime.withFrameNanos
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.focus.FocusRequester
@@ -35,7 +39,9 @@ import androidx.compose.ui.focus.onFocusChanged
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.res.stringResource
+import androidx.compose.ui.unit.TextUnit
 import androidx.compose.ui.unit.dp
+import androidx.compose.ui.unit.sp
 import androidx.hilt.lifecycle.viewmodel.compose.hiltViewModel
 import androidx.tv.material3.MaterialTheme
 import androidx.tv.material3.Surface
@@ -82,13 +88,29 @@ fun TvGuideGrid(
     viewModel: LiveTvViewModel = hiltViewModel(),
     /** The Live TV filters (favourites, sports channels) in front of the whole tuner. */
     channelFilter: (TvChannel) -> Boolean = { true },
+    /** The channel to focus when the viewer asks for the guide from another surface. */
+    initialChannelId: UUID? = null,
+    /** The selected page tab, used for explicit Up navigation from the guide toolbar. */
+    tabFocusRequester: FocusRequester,
+    /** The focused programme, used by the page's own masthead. */
+    onFocusedProgramChange: (TvProgram?) -> Unit = {},
+    /** Hide the in-page toolbar: Live TV's masthead owns that room now. */
+    showToolbar: Boolean = true,
+    /** The flat broadcast layout from the reference EPG: black, dense, no slate inset. */
+    dense: Boolean = false,
+    /** Long press on a programme: details, recording, reminder, favourite channel. */
+    onProgramActions: (TvProgram) -> Unit = {},
+    /** Long press on a channel: the channel's own actions, not a second OK path. */
+    onChannelActions: (TvChannel) -> Unit = {},
 ) {
     val scope = rememberCoroutineScope()
     val state by viewModel.state.collectAsState()
     val preferences by viewModel.preferences.data.collectAsState(preferences.appPreferences)
     val tvPrefs = preferences.interfacePreferences.liveTvPreferences
     var showViewOptions by remember { mutableStateOf(false) }
-    var showChannelDialog by remember { mutableStateOf<Pair<Int, TvChannel>?>(null) }
+    var focusedChannel by remember { mutableStateOf<TvChannel?>(null) }
+    var hourWidth by rememberSaveable { mutableIntStateOf(if (dense) 300 else 240) }
+    var jumpRequest by remember { mutableStateOf<GuideJump?>(null) }
 
     when (val st = state.loading) {
         is LoadingState.Error -> {
@@ -104,12 +126,6 @@ fun TvGuideGrid(
         LoadingState.Success,
         -> {
             val context = LocalContext.current
-            val programDialogState =
-                viewModel.programDialogState
-                    .collectAsState()
-                    .value.loading
-
-            var showItemDialog by remember { mutableStateOf<Int?>(null) }
             val focusRequester = remember { FocusRequester() }
             val buttonFocusRequester = remember { FocusRequester() }
             LaunchedEffect(Unit) {
@@ -176,37 +192,25 @@ fun TvGuideGrid(
                         null,
                     )
                 } else {
-                    AnimatedVisibility(
-                        // A cell between games has nothing to headline. Keeping the slot open
-                        // spent 30% of the page on the words "No data" — at the top of a sparse
-                        // schedule that is most of what the viewer could see.
-                        visible = tvPrefs.showHeader && focusedProgram?.isFake != true && focusedProgram != null,
-                        enter = expandVertically(),
-                        exit = shrinkVertically(),
-                    ) {
-                        TvGuideHeader(
-                            program = focusedProgram,
+                    if (showToolbar && tvPrefs.showHeader) {
+                        GuideToolbar(
+                            program = focusedProgram?.takeUnless { it.isFake },
+                            channel = focusedChannel,
+                            now = rememberTickingNow(),
+                            zoomLabel = guideZoomLabel(hourWidth),
+                            tabFocusRequester = tabFocusRequester,
+                            onNow = { jumpRequest = GuideJump.NOW },
+                            onTonight = { jumpRequest = GuideJump.TONIGHT },
+                            onTomorrow = { jumpRequest = GuideJump.TOMORROW },
+                            onZoomIn = { hourWidth = (hourWidth - 60).coerceAtLeast(120) },
+                            onZoomOut = { hourWidth = (hourWidth + 60).coerceAtMost(360) },
+                            onViewOptions = { showViewOptions = true },
                             modifier =
-                                Modifier
-                                    .padding(
-                                        top = HeaderUtils.topPadding,
-                                        bottom = 0.dp,
-                                        start = HeaderUtils.startPadding,
-                                        end = 24.dp,
-                                    )
-                                    // A fixed slot so the grid does not jump on every D-pad press,
-                                    // but tall enough for a wrapped title, the time line and the
-                                    // channel picture. At 30% of the page the last line was sliced
-                                    // in half by the header's own edge.
-                                    .height(132.dp),
-                            trailing = {
-                                ExpandableFaButton(
-                                    title = R.string.view_options,
-                                    iconStringRes = R.string.fa_sliders,
-                                    onClick = { showViewOptions = true },
-                                    modifier = Modifier.focusRequester(buttonFocusRequester),
-                                )
-                            },
+                                Modifier.padding(
+                                    start = HeaderUtils.startPadding,
+                                    end = 24.dp,
+                                    bottom = 6.dp,
+                                ),
                         )
                     }
                     TvGuideGridContent(
@@ -216,9 +220,15 @@ fun TvGuideGrid(
                         programs = state.programs,
                         channelProgramCount = state.channelProgramCount,
                         guideTimes = state.guideTimes,
-                        onClickChannel = { index, channel ->
-                            showChannelDialog = index to channel
+                        initialChannelId = initialChannelId,
+                        hourWidth = hourWidth,
+                        dense = dense,
+                        jumpRequest = jumpRequest,
+                        onJumpHandled = { jumpRequest = null },
+                        onClickChannel = { _, channel ->
+                            viewModel.tuneChannel(channel)
                         },
+                        onLongClickChannel = onChannelActions,
                         onFocus = {
                             // The grid draws a subset but the ViewModel pages over the tuner's
                             // whole channel list, so the row is translated back before asking for
@@ -229,18 +239,21 @@ fun TvGuideGrid(
                                     ?.takeIf { index -> index >= 0 } ?: it.row
                             viewModel.onFocusChannel(RowColumn(originalRow, it.column))
                         },
-                        onFocusProgram = { focusedProgram = it },
+                        onFocusProgram = { program ->
+                            focusedProgram = program
+                            focusedChannel = program?.let { value ->
+                                guideChannels.firstOrNull { it.id == value.channelId }
+                            }
+                            onFocusedProgramChange(program)
+                        },
+                        onFocusChannel = { channel -> focusedChannel = channel },
                         onClickProgram = { index, program ->
                             val now = LocalDateTime.now()
                             when {
                                 program.isFake -> {
                                     if (now.isAfter(program.start) && now.isBefore(program.end)) {
-                                        viewModel.navigationManager.navigateTo(
-                                            Destination.Playback(
-                                                itemId = program.channelId,
-                                                positionMs = 0L,
-                                            ),
-                                        )
+                                        guideChannels.firstOrNull { it.id == program.channelId }
+                                            ?.let(viewModel::tuneChannel)
                                     } else {
                                         Toast
                                             .makeText(
@@ -257,25 +270,18 @@ fun TvGuideGrid(
                                 // channel is a live fixture. A future programme still opens the
                                 // sheet, because its channel is showing something else now.
                                 !program.start.isAfter(now) && now.isBefore(program.end) -> {
-                                    viewModel.navigationManager.navigateTo(
-                                        Destination.Playback(
-                                            itemId = program.channelId,
-                                            positionMs = 0L,
-                                        ),
+                                    viewModel.tuneChannel(
+                                        guideChannels.firstOrNull { it.id == program.channelId } ?: return@TvGuideGridContent,
                                     )
                                 }
 
-                                else -> {
-                                    viewModel.fetchProgramForDialog(program.id)
-                                    showItemDialog = index
-                                }
+                                else -> onProgramActions(program)
                             }
                         },
-                        onLongClickProgram = { index, program ->
+                        onLongClickProgram = { _, program ->
                             // Hold for the sheet: details, record, series record. The quick path
                             // is watching; the slow path is everything else.
-                            viewModel.fetchProgramForDialog(program.id)
-                            showItemDialog = index
+                            onProgramActions(program)
                         },
                         focusRequester = focusRequester,
                         // The page keeps the artwork behind it in glass mode; the guide itself
@@ -285,44 +291,6 @@ fun TvGuideGrid(
                     )
                 }
             }
-            }
-            if (showItemDialog != null) {
-                val onDismissRequest = { showItemDialog = null }
-                ProgramDialog(
-                    state = programDialogState,
-                    canRecord = true,
-                    onDismissRequest = onDismissRequest,
-                    onWatch = {
-                        onDismissRequest.invoke()
-                        val channelId = it.data.channelId
-                        if (channelId != null) {
-                            viewModel.navigationManager.navigateTo(
-                                Destination.Playback(
-                                    itemId = channelId,
-                                    positionMs = 0L,
-                                ),
-                            )
-                        } else {
-                            Toast
-                                .makeText(context, "Program has no channel ID", Toast.LENGTH_LONG)
-                                .show()
-                        }
-                    },
-                    onRecord = { program, series ->
-                        viewModel.record(
-                            programId = program.id,
-                            series = series,
-                        )
-                        onDismissRequest.invoke()
-                    },
-                    onCancelRecord = { program, series ->
-                        viewModel.cancelRecording(
-                            series = series,
-                            timerId = if (series) program.data.seriesTimerId else program.data.timerId,
-                        )
-                        onDismissRequest.invoke()
-                    },
-                )
             }
         }
     }
@@ -339,47 +307,28 @@ fun TvGuideGrid(
             },
         )
     }
-    showChannelDialog?.let { (index, channel) ->
-        val watchLiveStr = stringResource(R.string.watch_live)
-        val dialogItems =
-            remember {
-                listOf(
-                    DialogItem(
-                        watchLiveStr,
-                        Icons.Default.PlayArrow,
-                        dismissOnClick = true,
-                    ) {
-                        viewModel.navigationManager.navigateTo(
-                            Destination.Playback(
-                                itemId = channel.id,
-                                positionMs = 0L,
-                            ),
-                        )
-                    },
-                    DialogItem(
-                        text = if (channel.favorite) R.string.remove_favorite else R.string.add_favorite,
-                        iconStringRes = R.string.fa_heart,
-                        iconColor = if (channel.favorite) Color.Red else Color.Unspecified,
-                        dismissOnClick = true,
-                    ) {
-                        viewModel.toggleFavorite(index, channel)
-                    },
-                )
-            }
-        DialogPopup(
-            onDismissRequest = { showChannelDialog = null },
-            params = DialogParams(false, channel.name ?: "", dialogItems),
-            elevation = 3.dp,
-        )
-    }
 }
+
+/**
+ * The reference EPG is denser than the glass guide: 44dp channel rows and 40dp programme blocks,
+ * a narrow number-plus-logo identity column, and half-hour columns wide enough for a full title.
+ */
+private val epgGuideDimensions =
+    ProgramGuideDimensions(
+        timelineHourWidth = 300.dp,
+        timelineHeight = 24.dp,
+        channelWidth = 166.dp,
+        channelHeight = 44.dp,
+        // One pixel of time, not a stripe through the programme titles.
+        currentTimeWidth = 1.dp,
+    )
 
 val tvGuideDimensions =
     ProgramGuideDimensions(
         timelineHourWidth = 240.dp,
-        timelineHeight = 32.dp,
+        timelineHeight = 28.dp,
         channelWidth = 120.dp,
-        channelHeight = 64.dp,
+        channelHeight = 56.dp,
         currentTimeWidth = 2.dp,
     )
 
@@ -393,14 +342,23 @@ val tvGuideDimensions =
 private val glassGuideDimensions =
     ProgramGuideDimensions(
         timelineHourWidth = 240.dp,
-        timelineHeight = 32.dp,
+        timelineHeight = 28.dp,
         channelWidth = 150.dp,
-        channelHeight = 64.dp,
+        channelHeight = 56.dp,
         currentTimeWidth = 2.dp,
     )
 
+private fun guideZoomLabel(hourWidth: Int): String =
+    when {
+        hourWidth <= 120 -> "1x"
+        hourWidth <= 180 -> "2x"
+        else -> "3x"
+    }
+
+internal enum class GuideJump { NOW, TONIGHT, TOMORROW }
+
 @Composable
-fun TvGuideGridContent(
+internal fun TvGuideGridContent(
     preferences: LiveTvPreferences,
     refreshing: Boolean,
     channels: List<TvChannel>,
@@ -408,10 +366,17 @@ fun TvGuideGridContent(
     channelProgramCount: Map<UUID, Int>,
     guideTimes: List<LocalDateTime>,
     onClickChannel: (Int, TvChannel) -> Unit,
+    onLongClickChannel: (TvChannel) -> Unit = {},
     onClickProgram: (Int, TvProgram) -> Unit,
     onLongClickProgram: ((Int, TvProgram) -> Unit)? = null,
     onFocus: (RowColumn) -> Unit,
-    onFocusProgram: (TvProgram) -> Unit,
+    onFocusProgram: (TvProgram?) -> Unit,
+    onFocusChannel: (TvChannel) -> Unit = {},
+    initialChannelId: UUID? = null,
+    hourWidth: Int = 240,
+    dense: Boolean = false,
+    jumpRequest: GuideJump? = null,
+    onJumpHandled: () -> Unit = {},
     focusRequester: FocusRequester,
     modifier: Modifier = Modifier,
 ) {
@@ -426,14 +391,117 @@ fun TvGuideGridContent(
 
     var focusedChannelIndex by rememberInt(-1)
     var focusedItem by rememberPosition(RowColumn(0, 0))
-    // Start on the first real programme rather than on slot 0: on a tuner that publishes one
-    // listing per channel, slot 0 is usually a gap before kickoff, and opening a guide with
-    // focus on an empty block is a page that looks like it has nothing in it.
-    val firstRealProgram =
-        remember(programs.programs) {
-            programs.programs.indexOfFirst { !it.isFake }.coerceAtLeast(0)
+    // Start on the best live thing, not slot zero. Drilling into the guide from a programme should
+    // land on that channel's now playing cell; opening Guide from the tab strip should land on the
+    // last channel the viewer watched if it is still present, then on a live programme. A tuner
+    // that publishes one listing per channel used to open on a gap before kickoff, which made a
+    // full schedule look empty.
+    val initialProgramIndex =
+        remember(programs.programs, channels, initialChannelId) {
+            val at = LocalDateTime.now()
+            val preferred = initialChannelId
+            val liveForPreferred =
+                preferred?.let { channelId ->
+                    programs.programs.indexOfFirst { program ->
+                        program.channelId == channelId &&
+                            !program.isFake &&
+                            !program.start.isAfter(at) &&
+                            at.isBefore(program.end)
+                    }
+                }
+            when {
+                liveForPreferred != null && liveForPreferred >= 0 -> liveForPreferred
+                else ->
+                    programs.programs.indexOfFirst {
+                        it.category == ProgramCategory.SPORTS && !it.isFake && !it.start.isAfter(at) && at.isBefore(it.end)
+                    }.takeIf { it >= 0 }
+                        ?: programs.programs.indexOfFirst { !it.isFake && !it.start.isAfter(at) && at.isBefore(it.end) }
+                            .takeIf { it >= 0 }
+                        ?: programs.programs.indexOfFirst { !it.isFake }.coerceAtLeast(0)
+            }
         }
-    var focusedProgramIndex by rememberInt(firstRealProgram)
+    var focusedProgramIndex by rememberInt(initialProgramIndex)
+    var focusSettled by remember { mutableStateOf(false) }
+    // The opening programme is scrolled into place before it is focused. Its focus event would
+    // otherwise centre it again and drag the first channel row up under the sticky time ruler.
+    var suppressFocusScroll by remember { mutableStateOf(true) }
+    val glass = LocalLiquidGlass.current
+    val dimensions =
+        (when {
+            dense -> epgGuideDimensions
+            glass -> glassGuideDimensions
+            else -> tvGuideDimensions
+        }).copy(
+            timelineHourWidth = hourWidth.dp,
+        )
+    val programFocusRequester = remember { FocusRequester() }
+    LaunchedEffect(programs.programs, initialProgramIndex) {
+        if (!focusSettled && programs.programs.isNotEmpty()) {
+            focusedProgramIndex = initialProgramIndex.coerceIn(0, programs.programs.lastIndex)
+            try {
+                withContext(WholphinDispatchers.Default) {
+                    // Put the opening row at the top of the list instead of centering it. On a
+                    // sports tuner the first live game can be several channels down, and centering
+                    // left the top channel sliced under the sticky time ruler by half a row. A
+                    // complete row is easier to scan than a partial one, and the guide still
+                    // opens on the live game the viewer came for.
+                    state.animateToProgram(focusedProgramIndex, Alignment.TopCenter)
+                }
+            } catch (ex: Exception) {
+                Timber.e(ex, "Couldn't scroll to the opening programme")
+            }
+            withFrameNanos { }
+            suppressFocusScroll = true
+            programFocusRequester.tryRequestFocus()
+            withFrameNanos { }
+            suppressFocusScroll = false
+            focusSettled = true
+        }
+    }
+    LaunchedEffect(jumpRequest) {
+        when (jumpRequest) {
+            GuideJump.NOW -> {
+                val channelId = programs.programs.getOrNull(focusedProgramIndex)?.channelId
+                val index =
+                    channelId?.let { id ->
+                        programs.programs.indexOfFirst { program ->
+                            program.channelId == id &&
+                                !program.isFake &&
+                                !program.start.isAfter(now) &&
+                                now.isBefore(program.end)
+                        }
+                    } ?: -1
+                if (index >= 0) {
+                    focusedProgramIndex = index
+                    state.animateToProgram(index, Alignment.Center)
+                    withFrameNanos { }
+                    programFocusRequester.tryRequestFocus()
+                } else {
+                    state.animateToCurrentTime(Alignment.CenterHorizontally)
+                }
+            }
+
+            GuideJump.TONIGHT,
+            GuideJump.TOMORROW,
+            -> {
+                val day =
+                    if (jumpRequest == GuideJump.TOMORROW) {
+                        LocalDateTime.now().toLocalDate().plusDays(1)
+                    } else {
+                        LocalDateTime.now().toLocalDate()
+                    }
+                val target = day.atTime(20, 0)
+                val index =
+                    guideTimes.indexOfFirst { !it.isBefore(target) }
+                        .takeIf { it >= 0 }
+                        ?: guideTimes.lastIndex.coerceAtLeast(0)
+                state.animateToTimeline(index, Alignment.CenterHorizontally)
+            }
+
+            null -> Unit
+        }
+        if (jumpRequest != null) onJumpHandled()
+    }
 
     LaunchedEffect(onFocus, focusedProgramIndex) {
         withContext(WholphinDispatchers.Default) {
@@ -452,31 +520,6 @@ fun TvGuideGridContent(
             }
         }
     }
-    val programFocusRequester = remember { FocusRequester() }
-
-    BackHandler(focusedItem.row > 0) {
-        scope.launch {
-            focusedProgramIndex = 0
-            state.animateToProgram(0, Alignment.Center)
-            programFocusRequester.tryRequestFocus()
-        }
-    }
-
-    BackHandler(focusedItem.column > 0) {
-        scope.launch {
-            val programIndex =
-                (0..<focusedItem.row)
-                    .mapNotNull {
-                        val channel = channels[it]
-                        channelProgramCount[channel.id]
-                    }.sum()
-            focusedProgramIndex = programIndex
-            state.animateToProgram(programIndex, Alignment.Center)
-            programFocusRequester.tryRequestFocus()
-        }
-    }
-
-    val glass = LocalLiquidGlass.current
     Box(
         modifier = modifier,
     ) {
@@ -489,11 +532,17 @@ fun TvGuideGridContent(
         Box(
             Modifier
                 .fillMaxSize()
-                .then(if (glass) Modifier.padding(12.dp).guideSlate() else Modifier),
+                .then(
+                    when {
+                        dense -> Modifier.background(GuideEpg.background)
+                        glass -> Modifier.padding(12.dp).guideSlate()
+                        else -> Modifier
+                    },
+                ),
         ) {
         ProgramGuide(
             state = state,
-            dimensions = if (glass) glassGuideDimensions else tvGuideDimensions,
+            dimensions = dimensions,
             modifier = Modifier.fillMaxSize(),
         ) {
             guideStartHour = 0f
@@ -507,7 +556,16 @@ fun TvGuideGridContent(
                 // The only saturated colour on the board. A schedule without a "now" line makes
                 // the viewer do the arithmetic on every row; at 25% of a theme colour it was so
                 // faint it may as well not have been drawn.
-                if (glass) {
+                if (dense) {
+                    // The now line is the one piece of the schedule that has to stay visible on
+                    // every cell, including the white focused one. White at 42% disappeared into
+                    // that fill; the GUIDE blue is the same accent the rest of the page uses.
+                    Box(
+                        Modifier
+                            .fillMaxSize()
+                            .background(GuideEpg.accent.copy(alpha = 0.6f)),
+                    )
+                } else if (glass) {
                     Box(
                         Modifier
                             .fillMaxSize()
@@ -544,51 +602,57 @@ fun TvGuideGridContent(
                 },
             ) { index ->
                 Box(
-                    modifier =
-                        Modifier
-                            // Intentionally set background twice
-                            // The second is padded so there are gaps between times
-                            // The first covers those gaps
-                            .background(
-                                if (glass) {
-                                    GuideSlate.headerBand
-                                } else {
-                                    MaterialTheme.colorScheme.background
-                                },
-                            ).padding(horizontal = if (glass) 0.dp else 2.dp)
-                            .fillMaxSize()
-                            .then(
-                                if (glass) {
-                                    // One continuous band rather than a row of chips: a time
-                                    // ruler is a ruler, and separated tiles made it look like a
-                                    // row of buttons that did nothing. It is also the mask that
-                                    // rows slide under, so the gaps must not be transparent.
-                                    Modifier.bottomHairline()
-                                } else {
-                                    Modifier.background(
-                                        MaterialTheme.colorScheme.surfaceVariant,
-                                        shape = RoundedCornerShape(4.dp),
-                                    )
-                                },
-                            ),
-                ) {
-                    val guideTime = guideTimes[index]
-                    val differentDay = guideTime.toLocalDate() != guideStart.toLocalDate()
-                    val time =
-                        DateUtils.formatDateTime(
-                            context,
-                            guideTime
-                                .toInstant(OffsetDateTime.now().offset)
-                                .epochSecond * 1000,
-                            DateUtils.FORMAT_SHOW_TIME or if (differentDay) DateUtils.FORMAT_SHOW_WEEKDAY else 0,
+                                            modifier =
+                            Modifier
+                                // Intentionally set background twice
+                                // The second is padded so there are gaps between times
+                                // The first covers those gaps
+                                .background(
+                                    when {
+                                        dense -> GuideEpg.ruler
+                                        glass -> GuideSlate.headerBand
+                                        else -> MaterialTheme.colorScheme.background
+                                    },
+                                ).padding(horizontal = if (glass) 0.dp else 2.dp)
+                                .fillMaxSize()
+                                .then(
+                                    when {
+                                        dense ->
+                                            Modifier
+                                                .bottomHairline(GuideEpg.rule)
+                                                .endHairline(GuideEpg.rule.copy(alpha = 0.55f))
+                                        glass ->
+                                            // One continuous band rather than a row of chips: a time
+                                            // ruler is a ruler, and separated tiles made it look like a
+                                            // row of buttons that did nothing. It is also the mask that
+                                            // rows slide under, so the gaps must not be transparent.
+                                            Modifier.bottomHairline()
+                                        else ->
+                                            Modifier.background(
+                                                MaterialTheme.colorScheme.surfaceVariant,
+                                                shape = RoundedCornerShape(4.dp),
+                                            )
+                                    },
+                                ),
+                    ) {
+                        val guideTime = guideTimes[index]
+                        val differentDay = guideTime.toLocalDate() != guideStart.toLocalDate()
+                        val time =
+                            DateUtils.formatDateTime(
+                                context,
+                                guideTime
+                                    .toInstant(OffsetDateTime.now().offset)
+                                    .epochSecond * 1000,
+                                DateUtils.FORMAT_SHOW_TIME or if (differentDay) DateUtils.FORMAT_SHOW_WEEKDAY else 0,
+                            )
+                        Text(
+                            text = time.toString(),
+                            style = if (glass) GlassType.meta else MaterialTheme.typography.bodyMedium,
+                            color = if (glass) Color.White.copy(alpha = 0.80f) else MaterialTheme.colorScheme.onSurface,
+                            fontSize = if (dense) 10.5.sp else TextUnit.Unspecified,
+                            modifier = Modifier.padding(horizontal = 6.dp, vertical = if (dense) 3.dp else 6.dp),
                         )
-                    Text(
-                        text = time.toString(),
-                        style = if (glass) GlassType.meta else MaterialTheme.typography.bodyMedium,
-                        color = if (glass) Color.White.copy(alpha = 0.80f) else MaterialTheme.colorScheme.onSurface,
-                        modifier = Modifier.padding(horizontal = 8.dp, vertical = 6.dp),
-                    )
-                }
+                    }
             }
             programs(
                 count = programs.programs.size,
@@ -641,14 +705,17 @@ fun TvGuideGridContent(
                                     focusedItem = RowColumn(channelIndex, column)
                                     onFocus.invoke(focusedItem)
                                     onFocusProgram.invoke(program)
-                                    scope.launch {
-                                        try {
-                                            state.animateToProgram(
-                                                programIndex,
-                                                Alignment.Center,
-                                            )
-                                        } catch (ex: Exception) {
-                                            Timber.e(ex, "Couldn't scroll to $programIndex")
+                                    onFocusChannel.invoke(channels.getOrNull(channelIndex) ?: return@onFocusChanged)
+                                    if (!suppressFocusScroll) {
+                                        scope.launch {
+                                            try {
+                                                state.animateToProgram(
+                                                    programIndex,
+                                                    Alignment.Center,
+                                                )
+                                            } catch (ex: Exception) {
+                                                Timber.e(ex, "Couldn't scroll to $programIndex")
+                                            }
                                         }
                                     }
                                 }
@@ -667,7 +734,7 @@ fun TvGuideGridContent(
                     channel = channel,
                     channelIndex = channelIndex,
                     onClick = { onClickChannel.invoke(channelIndex, channel) },
-                    onLongClick = {},
+                    onLongClick = { onLongClickChannel.invoke(channel) },
                     modifier =
                         Modifier
                             .ifElse(
@@ -688,6 +755,14 @@ fun TvGuideGridContent(
                                     }
                                     focusedItem = RowColumn(channelIndex, 0)
                                     onFocus.invoke(focusedItem)
+                                    onFocusProgram.invoke(
+                                        programs.programsByChannel[channel.id]
+                                            .orEmpty()
+                                            .firstOrNull {
+                                                !it.isFake && !it.start.isAfter(now) && now.isBefore(it.end)
+                                            },
+                                    )
+                                    onFocusChannel.invoke(channel)
                                 }
                             },
                 )
@@ -698,18 +773,56 @@ fun TvGuideGridContent(
                     Modifier
                         .fillMaxSize()
                         .then(
-                            if (glass) {
-                                Modifier
-                                    .background(GuideSlate.headerBand)
-                                    .bottomHairline()
-                                    .endHairline()
-                            } else {
-                                Modifier.background(MaterialTheme.colorScheme.surface)
+                            when {
+                                dense ->
+                                    Modifier
+                                        .background(GuideEpg.ruler)
+                                        .bottomHairline(GuideEpg.rule)
+                                        .endHairline(GuideEpg.divider)
+                                glass ->
+                                    Modifier
+                                        .background(GuideSlate.headerBand)
+                                        .bottomHairline()
+                                        .endHairline()
+                                else -> Modifier.background(MaterialTheme.colorScheme.surface)
                             },
                         ),
-                )
+                    contentAlignment = Alignment.BottomStart,
+                ) {
+                    if (dense) {
+                        Text(
+                            text = stringResource(R.string.live_tv_today),
+                            color = GuideEpg.text.copy(alpha = 0.88f),
+                            fontSize = 10.sp,
+                            modifier = Modifier.padding(start = 10.dp, bottom = 4.dp),
+                        )
+                    }
+                }
             }
         }
+        }
+        // The guide's sticky timeline does not fully occlude the channel column: a channel row
+        // sliding under the ruler can paint its number over "Today". Mask the corner above the
+        // whole board, then redraw the same label on top. This keeps the top-left clean at every
+        // scroll position instead of only when the first channel happens to be at the top.
+        if (dense) {
+            Box(
+                Modifier
+                    .align(Alignment.TopStart)
+                    .width(dimensions.channelWidth)
+                    .height(dimensions.timelineHeight)
+                    .background(GuideEpg.ruler)
+                    .bottomHairline(GuideEpg.rule)
+                    .endHairline(GuideEpg.divider),
+                contentAlignment = Alignment.BottomStart,
+            ) {
+                Text(
+                    text = stringResource(R.string.live_tv_today),
+                    color = GuideEpg.text.copy(alpha = 0.88f),
+                    fontSize = 10.sp,
+                    modifier = Modifier.padding(start = 10.dp, bottom = 4.dp),
+                )
+            }
         }
         if (refreshing) {
             CircularProgress(

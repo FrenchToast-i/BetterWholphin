@@ -229,7 +229,18 @@ class NavDrawerService
                             type = it.collectionType,
                         )
                     }
-            val allItems = builtins + libraries
+            // Sports is a sibling of Live TV, not a fifth tab inside it. Insert it directly
+            // after the tuner library so the bar reads Live TV → Sports → the rest.
+            val allItems =
+                buildList<NavDrawerItem> {
+                    addAll(builtins)
+                    addAll(libraries)
+                    val liveTvIndex =
+                        indexOfFirst {
+                            it is ServerNavDrawerItem && it.type == CollectionType.LIVETV
+                        }
+                    if (liveTvIndex >= 0) add(liveTvIndex + 1, NavDrawerItem.Sports)
+                }
 
             val navDrawerPins =
                 withContext(WholphinDispatchers.IO) {

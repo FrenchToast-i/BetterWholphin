@@ -131,6 +131,8 @@ fun GlassTopBar(
     onSearchClick: () -> Unit,
     onPlaySomethingClick: () -> Unit,
     onTonightClick: () -> Unit,
+    /** The shrunken Live TV bar: same controls, less vertical room for the schedule. */
+    miniBar: Boolean = false,
     modifier: Modifier = Modifier,
 ) {
     val context = LocalContext.current
@@ -212,16 +214,31 @@ fun GlassTopBar(
         // One measurement of a label is a few hundred microseconds, and it only reruns when the
         // labels or the enabled controls change, so the bar can afford to know its own width
         // instead of guessing from a count.
-        val compactTab = GlassType.tab.copy(fontSize = 16.sp)
+        val compactTab = GlassType.tab.copy(fontSize = 14.sp)
+        val pillHeight = if (miniBar) 38.dp else GlassTokens.pillHeight
+        val barHeight = if (miniBar) 38.dp else GlassTokens.barHeight
+        val barGap = if (miniBar) 6.dp else BarGap
 
         fun capsuleWidth(compact: Boolean): Dp {
             if (barItems.isEmpty()) return 0.dp
-            val style = if (compact) compactTab else GlassType.tab
+            // Must be the same inset BarPill receives below (10dp in compact). Using 8dp here
+            // under-measured the capsule by 4dp per destination, so the last tab was clipped
+            // ("Sho") even though the bar reported that all labels fit.
             val pillPadding = if (compact) 10.dp else GlassTokens.pillPadding
             val pillGap = if (compact) 4.dp else 6.dp
-            val capsulePadding = if (compact) 6.dp else 8.dp
+            val capsulePadding = if (compact) 5.dp else 8.dp
             val pills =
                 barItems.fold(0.dp) { total, item ->
+                    // The selected label uses the heavier selected face. Measuring every item
+                    // with the regular face under-measured the capsule by the selected pill's
+                    // width, which is how the last destination lost its final letter.
+                    val style =
+                        when {
+                            compact && item.selected -> GlassType.tabSelected.copy(fontSize = 14.sp)
+                            compact -> compactTab
+                            item.selected -> GlassType.tabSelected
+                            else -> GlassType.tab
+                        }
                     total + measure(item.label, style) + pillPadding * 2
                 }
             return pills + pillGap * (barItems.size - 1) + capsulePadding * 2
@@ -240,18 +257,19 @@ fun GlassTopBar(
             clockWidth: Dp,
         ): Dp =
             capsuleWidth(compact) +
-                GlassTokens.pillHeight * discCount +
+                pillHeight * discCount +
                 clockWidth * clockCount +
-                BarGap * gaps
+                barGap * gaps
 
         // Spacious until the labels stop fitting, compact until even the smaller type stops
         // fitting, and only then a capsule that scrolls. A television with every control turned
         // off gets one small capsule hugging three labels rather than a bar-wide sheet of glass.
         val available = if (maxWidth.value.isFinite()) maxWidth else Dp.Infinity
-        val spacious = total(compact = false, clockWidth = fullClockWidth) <= available
-        val compact = !spacious
+        val spacious =
+            !miniBar && total(compact = false, clockWidth = fullClockWidth) <= available
+        val compact = miniBar || !spacious
         val scrolling =
-            !spacious && total(compact = true, clockWidth = GlassTokens.pillHeight) > available
+            !spacious && total(compact = true, clockWidth = if (showClock) pillHeight else 0.dp) > available
         val watchFace = compact && meridiem.isNotEmpty()
 
         val listState = rememberLazyListState()
@@ -268,16 +286,17 @@ fun GlassTopBar(
         }
 
         Row(
-            modifier = Modifier.fillMaxWidth().height(GlassTokens.barHeight),
+            modifier = Modifier.fillMaxWidth().height(barHeight),
             verticalAlignment = Alignment.CenterVertically,
-            horizontalArrangement = Arrangement.spacedBy(BarGap),
+            horizontalArrangement = Arrangement.spacedBy(barGap),
         ) {
             if (showProfile) {
-                GlassCapsule(modifier = Modifier.size(GlassTokens.pillHeight)) {
+                GlassCapsule(modifier = Modifier.size(pillHeight)) {
                     ProfileButton(
                         user = user,
                         imageUrl = userImageUrl,
                         onClick = onProfileClick,
+                        avatarSize = if (miniBar) 28.dp else 38.dp,
                     )
                 }
             }
@@ -285,14 +304,14 @@ fun GlassTopBar(
                 GlassCapsule(
                     modifier =
                         if (scrolling) {
-                            Modifier.weight(1f).height(GlassTokens.pillHeight)
+                            Modifier.weight(1f).height(pillHeight)
                         } else {
-                            Modifier.width(capsuleWidth(compact)).height(GlassTokens.pillHeight)
+                            Modifier.width(capsuleWidth(compact)).height(pillHeight)
                         },
                     contentPadding =
                         PaddingValues(
-                            horizontal = if (compact) 6.dp else 8.dp,
-                            vertical = PillInset,
+                            horizontal = if (compact) 5.dp else 8.dp,
+                            vertical = if (miniBar) 3.dp else PillInset,
                         ),
                 ) {
                     LazyRow(
@@ -322,12 +341,14 @@ fun GlassTopBar(
                 // The nightly plan, one press from any page. A disc rather than a destination
                 // pill: the libraries need the capsule's width, and a moon is recognisable at this
                 // size.
-                GlassCapsule(modifier = Modifier.size(GlassTokens.pillHeight)) {
+                GlassCapsule(modifier = Modifier.size(pillHeight)) {
                     GlyphPill(
                         glyph = stringResource(R.string.fa_moon),
                         description = stringResource(R.string.tonight),
                         onClick = onTonightClick,
                         selected = tonightSelected,
+                        size = pillHeight,
+                        mini = miniBar,
                     )
                 }
             }
@@ -335,11 +356,13 @@ fun GlassTopBar(
                 // The one control that answers "what should I watch?" without opening a page: it
                 // picks from the whole library in the viewer's taste and starts playing. It sits
                 // beside search because both are global actions rather than places.
-                GlassCapsule(modifier = Modifier.size(GlassTokens.pillHeight)) {
+                GlassCapsule(modifier = Modifier.size(pillHeight)) {
                     GlyphPill(
                         glyph = stringResource(R.string.fa_shuffle),
                         description = stringResource(R.string.play_something),
                         onClick = onPlaySomethingClick,
+                        size = pillHeight,
+                        mini = miniBar,
                     )
                 }
             }
@@ -348,11 +371,13 @@ fun GlassTopBar(
                 // hovers over the last poster in a grid is both an obstruction and outside the
                 // focus path, so the D-pad could not reliably reach it. In the bar it is one press
                 // from anywhere and still visually separate from the library destinations.
-                GlassCapsule(modifier = Modifier.size(GlassTokens.pillHeight)) {
+                GlassCapsule(modifier = Modifier.size(pillHeight)) {
                     IconPill(
                         icon = Icons.Default.Search,
                         description = stringResource(R.string.search),
                         onClick = onSearchClick,
+                        size = pillHeight,
+                        mini = miniBar,
                     )
                 }
             }
@@ -363,7 +388,7 @@ fun GlassTopBar(
                     // A watch face — time over its meridiem — keeps it in a 50dp disc, the same
                     // width as every control around it. 24-hour locales carry no day period and
                     // take the single-line branch below.
-                    GlassCapsule(modifier = Modifier.size(GlassTokens.pillHeight)) {
+                    GlassCapsule(modifier = Modifier.size(pillHeight)) {
                         Column(
                             horizontalAlignment = Alignment.CenterHorizontally,
                             verticalArrangement = Arrangement.Center,
@@ -393,7 +418,7 @@ fun GlassTopBar(
                 } else if (compact) {
                     // No day period to stack: the time is one short line, and a disc keeps the row
                     // of equal shapes.
-                    GlassCapsule(modifier = Modifier.size(GlassTokens.pillHeight)) {
+                    GlassCapsule(modifier = Modifier.size(pillHeight)) {
                         Text(
                             text = time,
                             style = GlassType.clock.copy(fontSize = 13.sp),
@@ -403,7 +428,7 @@ fun GlassTopBar(
                     }
                 } else {
                     GlassCapsule(
-                        modifier = Modifier.height(GlassTokens.pillHeight),
+                        modifier = Modifier.height(pillHeight),
                         contentPadding = PaddingValues(horizontal = 12.dp),
                     ) {
                         Text(
@@ -415,7 +440,7 @@ fun GlassTopBar(
                 }
             }
             if (showSettings) {
-                GlassCapsule(modifier = Modifier.size(GlassTokens.pillHeight)) {
+                GlassCapsule(modifier = Modifier.size(pillHeight)) {
                     IconPill(
                         icon = Icons.Default.Settings,
                         description = stringResource(R.string.settings),
@@ -424,6 +449,8 @@ fun GlassTopBar(
                         // while the viewer was three sub-pages deep in settings.
                         selected = settingsSelected,
                         onClick = onSettingsClick,
+                        size = pillHeight,
+                        mini = miniBar,
                     )
                 }
             }
@@ -464,6 +491,7 @@ private fun ProfileButton(
     user: JellyfinUser,
     imageUrl: String?,
     onClick: () -> Unit,
+    avatarSize: Dp,
 ) {
     Surface(
         onClick = onClick,
@@ -482,7 +510,7 @@ private fun ProfileButton(
                 name = user.name,
                 imageUrl = imageUrl,
                 alpha = 1f,
-                modifier = Modifier.size(38.dp),
+                modifier = Modifier.size(avatarSize),
             )
         }
     }
@@ -494,10 +522,12 @@ private fun IconPill(
     description: String,
     onClick: () -> Unit,
     selected: Boolean = false,
+    size: Dp,
+    mini: Boolean = false,
 ) {
     Surface(
         onClick = onClick,
-        modifier = Modifier.size(GlassTokens.pillHeight),
+        modifier = Modifier.size(size),
         shape = ClickableSurfaceDefaults.shape(shape = BarPillShape),
         colors = BarColors(selected = selected),
         scale = ClickableSurfaceDefaults.scale(focusedScale = if (selected) 1.08f else 1.05f),
@@ -509,7 +539,7 @@ private fun IconPill(
                 imageVector = icon,
                 contentDescription = description,
                 tint = if (selected) Color.Black else Color.White.copy(alpha = 0.92f),
-                modifier = Modifier.size(21.dp),
+                modifier = Modifier.size(if (mini) 18.dp else 21.dp),
             )
         }
     }
@@ -528,10 +558,12 @@ private fun GlyphPill(
     description: String,
     onClick: () -> Unit,
     selected: Boolean = false,
+    size: Dp,
+    mini: Boolean = false,
 ) {
     Surface(
         onClick = onClick,
-        modifier = Modifier.size(GlassTokens.pillHeight),
+        modifier = Modifier.size(size),
         shape = ClickableSurfaceDefaults.shape(shape = BarPillShape),
         colors = BarColors(selected = selected),
         scale = ClickableSurfaceDefaults.scale(focusedScale = if (selected) 1.08f else 1.05f),
@@ -542,7 +574,7 @@ private fun GlyphPill(
             Text(
                 text = glyph,
                 fontFamily = FontAwesome,
-                fontSize = 18.sp,
+                fontSize = if (mini) 16.sp else 18.sp,
                 // A selected disc is white, so the glyph flips like every other selected control.
                 color = if (selected) Color.Black else Color.White.copy(alpha = 0.92f),
                 // A glyph's baseline sits high in its line box, which leaves the mark ~1dp above
@@ -573,8 +605,8 @@ private fun BarPill(
 ) {
     val style =
         when {
-            compact && selected -> GlassType.tabSelected.copy(fontSize = 16.sp)
-            compact -> GlassType.tab.copy(fontSize = 16.sp)
+            compact && selected -> GlassType.tabSelected.copy(fontSize = 14.sp)
+            compact -> GlassType.tab.copy(fontSize = 14.sp)
             selected -> GlassType.tabSelected
             else -> GlassType.tab
         }

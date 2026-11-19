@@ -118,6 +118,16 @@ class ForYouViewModel
     }
 
 /**
+ * The cards this row can actually show. Excluding is done at draw time so a row loading above
+ * never requeries this one; the same show in two places would read as a bug.
+ */
+internal fun ForYouViewModel.State.Ready.visibleItems(excludeIds: Set<UUID>): List<BaseItem> =
+    items
+        .filter { item ->
+            item.id !in excludeIds && item.data.seriesId?.let { it in excludeIds } != true
+        }.take(MAX_VISIBLE)
+
+/**
  * "For You" — the library's own recommendation row.
  *
  * Cards are ordinary library items, so they carry the same posters, the same progress bars, and
@@ -135,17 +145,9 @@ fun ForYouShelf(
     onFocusItem: ((BaseItem?) -> Unit)? = null,
 ) {
     val ready = state as? ForYouViewModel.State.Ready ?: return
-    // The row sits under the watch row, and the same show in both places would read as a bug.
-    // Excluding is done at draw time so a row loading above never requeries this one.
-    val items =
-        remember(ready.items, excludeIds) {
-            ready.items
-                .filter { item ->
-                    item.id !in excludeIds && item.data.seriesId?.let { it in excludeIds } != true
-                }.take(MAX_VISIBLE)
-        }
+    val items = remember(ready.items, excludeIds) { ready.visibleItems(excludeIds) }
     // A one- or two-card row looks like a failed query, not a recommendation.
-    if (items.size < MIN_VISIBLE) return
+    if (items.size < FOR_YOU_MIN_VISIBLE) return
 
     ItemRow(
         title = stringResource(R.string.for_you),
@@ -227,4 +229,4 @@ private fun ForYouReasonLine(
 private const val MAX_VISIBLE = 12
 
 /** Below this the row is not worth drawing. */
-private const val MIN_VISIBLE = 4
+internal const val FOR_YOU_MIN_VISIBLE = 4

@@ -72,6 +72,12 @@ fun TabRow(
     tabs: List<TabDetails>,
     onClick: (Int) -> Unit,
     modifier: Modifier = Modifier,
+    /**
+     * Extra focus behaviour for every tab. Live TV uses this to make Up from the tab strip enter
+     * its page-action row, which sits above the tabs and is otherwise skipped by geometric focus
+     * search in favour of the app's top bar.
+     */
+    tabModifier: Modifier = Modifier,
 ) {
     val state = rememberLazyListState()
     LaunchedEffect(selectedTabIndex) {
@@ -104,6 +110,7 @@ fun TabRow(
                 },
                 onClick = currentOnClick,
                 ensureVisible = selectedTabIndex,
+                tabModifier = tabModifier,
             )
         } else {
             LazyRow(
@@ -144,7 +151,7 @@ fun TabRow(
                         rowActive = rowHasFocus,
                         interactionSource = interactionSource,
                         onClick = onTabClick,
-                        modifier = Modifier.focusRequester(tab.tabFocusRequester),
+                        modifier = Modifier.focusRequester(tab.tabFocusRequester).then(tabModifier),
                     )
                 }
             }
@@ -170,6 +177,7 @@ private fun GlassTabScroller(
     onClick: (Int) -> Unit,
     modifier: Modifier = Modifier,
     ensureVisible: Int? = null,
+    tabModifier: Modifier = Modifier,
 ) {
     Row(
         horizontalArrangement = Arrangement.spacedBy(4.dp),
@@ -194,7 +202,7 @@ private fun GlassTabScroller(
                 rowActive = rowHasFocus,
                 interactionSource = interactionSource,
                 onClick = { onClick(index) },
-                modifier = Modifier.focusRequester(tab.tabFocusRequester),
+                modifier = Modifier.focusRequester(tab.tabFocusRequester).then(tabModifier),
                 bringIntoViewRequester = tab.bringIntoViewRequester,
             )
         }

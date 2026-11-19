@@ -88,10 +88,11 @@ import kotlin.time.Duration.Companion.seconds
 fun LiveTvSportsTab(
     onClickProgram: (TvProgram) -> Unit,
     onClickChannel: (TvChannel) -> Unit,
+    onLongClickProgram: ((TvProgram) -> Unit)? = null,
     modifier: Modifier = Modifier,
     focusRequester: FocusRequester? = null,
-    /** The Live TV band's favourites filter, applied to the fixtures as well as the channels. */
-    favoritesOnly: Boolean = false,
+    /** The Live TV band's shared channel filter, applied to the fixtures as well as the channels. */
+    channelFilter: (TvChannel) -> Boolean = { true },
     /** The Live TV band's "live now" filter: only the fixtures airing at this moment. */
     liveOnly: Boolean = false,
     viewModel: LiveTvViewModel = hiltViewModel(),
@@ -122,11 +123,12 @@ fun LiveTvSportsTab(
                         .sortedBy { it.start }
                 }
             val sports =
-                remember(allSports, favoritesOnly, liveOnly, channelsById, now) {
+                remember(allSports, channelFilter, liveOnly, channelsById, now) {
                     allSports
-                        .filter { !favoritesOnly || channelsById[it.channelId]?.favorite == true }
+                        .filter { program -> channelsById[program.channelId]?.let(channelFilter) == true }
                         .filter { !liveOnly || (it.start <= now && now.isBefore(it.end)) }
                 }
+            val visibleChannels = remember(state.channels, channelFilter) { state.channels.filter(channelFilter) }
             if (sports.isEmpty() && liveOnly && allSports.isNotEmpty()) {
                 // "Live now" with nothing on is an honest answer, not a missing guide.
                 Box(modifier.fillMaxSize(), contentAlignment = Alignment.Center) {
@@ -136,9 +138,9 @@ fun LiveTvSportsTab(
                         color = copyColor(0.75f),
                     )
                 }
-            } else if (sports.isEmpty() && favoritesOnly && allSports.isNotEmpty()) {
-                // There is sport, but none of it is on a favourite channel. Saying so is the
-                // difference between a filter that worked and a page that lost its data.
+            } else if (sports.isEmpty() && allSports.isNotEmpty() && visibleChannels.size < state.channels.size) {
+                // There is sport, but none of it is on a channel the filters allow. Saying so is
+                // the difference between a filter that worked and a page that lost its data.
                 Box(modifier.fillMaxSize(), contentAlignment = Alignment.Center) {
                     Text(
                         text = stringResource(R.string.live_tv_filter_empty_sports),
@@ -148,7 +150,7 @@ fun LiveTvSportsTab(
                 }
             } else if (sports.isEmpty()) {
                 SportsWithoutListings(
-                    channels = state.channels,
+                    channels = visibleChannels,
                     // Two different answers: a guide with no listings at all is a tuner that has
                     // not been refreshed, while a guide full of soaps and news is a tuner that
                     // simply does not carry sport. Sending the second viewer to refresh the
@@ -190,6 +192,7 @@ fun LiveTvSportsTab(
                                 channel = channelsById[featured.channelId],
                                 now = now,
                                 onClick = { onClickProgram(featured) },
+                                onLongClick = { onLongClickProgram?.invoke(featured) },
                                 focusRequester = focusRequester,
                             )
                         }
@@ -204,6 +207,7 @@ fun LiveTvSportsTab(
                                 programs = otherLive,
                                 channelsById = channelsById,
                                 onClick = onClickProgram,
+                                onLongClick = onLongClickProgram,
                                 now = now,
                                 live = true,
                             )
@@ -216,6 +220,7 @@ fun LiveTvSportsTab(
                                 programs = games,
                                 channelsById = channelsById,
                                 onClick = onClickProgram,
+                                onLongClick = onLongClickProgram,
                                 now = now,
                                 live = false,
                             )
@@ -286,6 +291,7 @@ private fun SportsFeature(
     channel: TvChannel?,
     now: LocalDateTime,
     onClick: () -> Unit,
+    onLongClick: () -> Unit,
     focusRequester: FocusRequester?,
 ) {
     val context = LocalContext.current
@@ -563,6 +569,7 @@ private fun SportsRow(
     programs: List<TvProgram>,
     channelsById: Map<UUID, TvChannel>,
     onClick: (TvProgram) -> Unit,
+    onLongClick: ((TvProgram) -> Unit)?,
     now: LocalDateTime,
     live: Boolean,
 ) {
@@ -591,6 +598,7 @@ private fun SportsRow(
                     channel = channelsById[program.channelId],
                     live = live || (program.start <= now && now.isBefore(program.end)),
                     onClick = { onClick(program) },
+                    onLongClick = { onLongClick?.invoke(program) },
                 )
             }
         }
@@ -603,6 +611,7 @@ private fun SportsProgramCard(
     channel: TvChannel?,
     live: Boolean,
     onClick: () -> Unit,
+    onLongClick: () -> Unit,
     modifier: Modifier = Modifier,
 ) {
     val context = LocalContext.current
@@ -610,7 +619,7 @@ private fun SportsProgramCard(
     Card(
         onClick = onClick,
         modifier = modifier.width(CARD_WIDTH).aspectRatio(16f / 9f),
-        onLongClick = {},
+        onLongClick = onLongClick,
         shape = glassCardShape(),
         border = glassCardBorder(),
         glow = glassCardGlow(),

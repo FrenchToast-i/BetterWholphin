@@ -41,6 +41,7 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.drawBehind
 import androidx.compose.ui.draw.shadow
 import androidx.compose.ui.focus.FocusRequester
+import androidx.compose.ui.focus.focusProperties
 import androidx.compose.ui.focus.focusRequester
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.graphicsLayer
@@ -216,6 +217,12 @@ fun DialogPopup(
     waitToLoad: Boolean = true,
     properties: DialogProperties = DialogProperties(),
     elevation: Dp = 1.dp,
+    /**
+     * Optional size for the scrollable item list. Long menus otherwise measure taller than the
+     * TV screen: the pane is clipped at both edges and the final actions (Clear filters, Close)
+     * cannot be seen without scrolling a list whose edges are already off screen.
+     */
+    listModifier: Modifier = Modifier,
 ) {
     var waiting by remember { mutableStateOf(waitToLoad) }
     if (showDialog) {
@@ -243,6 +250,7 @@ fun DialogPopup(
                 waiting = waiting,
                 onDismissRequest = onDismissRequest,
                 dismissOnClick = dismissOnClick,
+                listModifier = listModifier,
                 modifier =
                     Modifier
                         .onKeyEvent { event ->
@@ -273,6 +281,7 @@ fun DialogPopupContent(
     onDismissRequest: () -> Unit,
     modifier: Modifier = Modifier,
     dismissOnClick: Boolean = true,
+    listModifier: Modifier = Modifier,
 ) {
     val glass = LocalLiquidGlass.current
     Column(
@@ -291,7 +300,7 @@ fun DialogPopupContent(
         val focusRequesters = remember { List(dialogItems.size) { FocusRequester() } }
         LazyColumn(
             state = listState,
-            modifier = Modifier,
+            modifier = listModifier,
         ) {
             itemsIndexed(dialogItems) { index, item ->
                 when (item) {
@@ -323,6 +332,10 @@ fun DialogPopupContent(
                             modifier =
                                 Modifier
                                     .focusRequester(focusRequesters[index])
+                                    // A disabled row is information, not an action. Leaving it
+                                    // focusable put a dead stop between Refresh and Close and
+                                    // drew a focus ring around a row that could not be activated.
+                                    .focusProperties { canFocus = item.enabled && !waiting }
                                     .lazyListWrapScrolling(
                                         listState,
                                         focused,
@@ -346,6 +359,7 @@ fun DialogPopup(
     dismissOnClick: Boolean = true,
     properties: DialogProperties = DialogProperties(),
     elevation: Dp = 1.dp,
+    listModifier: Modifier = Modifier,
 ) = DialogPopup(
     showDialog = true,
     waitToLoad = params.fromLongClick,
@@ -355,6 +369,7 @@ fun DialogPopup(
     dismissOnClick = dismissOnClick,
     properties = properties,
     elevation = elevation,
+    listModifier = listModifier,
 )
 
 /**

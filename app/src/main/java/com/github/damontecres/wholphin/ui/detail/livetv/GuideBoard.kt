@@ -120,9 +120,37 @@ internal fun Modifier.endHairline(color: Color = GuideSlate.divider): Modifier =
  * is on now" from ten feet, and it uses [LiveRed] so the guide and the sports page agree.
  */
 /**
- * One programme cell's height: the guide's 64dp row minus the 2dp inset at each edge.
+ * The broadcast EPG palette.
+ *
+ * Live TV deliberately leaves the app's glass room here. The reference is a printed listings
+ * grid: pure black, flat grey programme blocks, a single blue for the GUIDE controls, and one
+ * white fill for the focused cell. At ten feet that contrast is the interface; frosting the board
+ * would put artwork behind 13sp titles and make the schedule harder to read, not calmer.
+ */
+internal object GuideEpg {
+    val background: Color = Color.Black
+    val ruler: Color = Color(0xFF151515)
+    val channel: Color = Color(0xFF070707)
+    val divider: Color = Color(0xFF393939)
+    val rule: Color = Color.White.copy(alpha = 0.14f)
+
+    /** The ordinary cell and the lighter block of the programme that is airing now. */
+    val cell: Color = Color(0xFF242424)
+    val cellOnAir: Color = Color(0xFF2E2E2E)
+    val cellFuture: Color = Color(0xFF1E1E1E)
+
+    val text: Color = Color(0xFFF1F1F1)
+    val textDim: Color = Color(0xFFB7B7B7)
+    val focus: Color = Color.White
+    val focusInk: Color = Color(0xFF080808)
+    val accent: Color = Color(0xFF35A9E0)
+    val preview: Color = Color(0xFF121212)
+}
+
+/**
+ * One programme cell's height: the guide's 44dp row minus the 2dp inset at each edge.
  *
  * The guide measures a cell against an unbounded height, so the tile has to state its own size or
  * it shrinks to its text and floats in the top of the row.
  */
-internal val GuideCellHeight: Dp = 60.dp
+internal val GuideCellHeight: Dp = 40.dp

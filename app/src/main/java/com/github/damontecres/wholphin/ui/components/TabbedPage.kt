@@ -163,6 +163,7 @@ fun TabbedPage(
     modifier: Modifier = Modifier,
     showTabs: Boolean = true,
     header: (@Composable () -> Unit)? = null,
+    tabModifier: Modifier = Modifier,
     tabContent: @Composable (Int, TabDetails) -> Unit,
 ) {
     // The clock reserves 184dp on the classic drawer layout because it floats over the page's
@@ -196,6 +197,7 @@ fun TabbedPage(
                         .padding(top = 16.dp, bottom = 16.dp, end = endPadding),
                 tabs = tabs,
                 onClick = updateSelectedTabIndex,
+                tabModifier = tabModifier,
             )
         }
         selectedTabIndex.let { tabIndex ->

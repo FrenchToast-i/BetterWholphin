@@ -7,6 +7,10 @@ import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.text.buildAnnotatedString
 import androidx.datastore.core.DataStore
 import androidx.lifecycle.ViewModel
+import androidx.work.ExistingWorkPolicy
+import androidx.work.OneTimeWorkRequestBuilder
+import androidx.work.WorkManager
+import androidx.work.workDataOf
 import androidx.lifecycle.viewModelScope
 import com.github.damontecres.wholphin.R
 import com.github.damontecres.wholphin.WholphinApplication
@@ -15,6 +19,7 @@ import com.github.damontecres.wholphin.data.model.BaseItem
 import com.github.damontecres.wholphin.preferences.AppPreferences
 import com.github.damontecres.wholphin.services.FavoriteWatchManager
 import com.github.damontecres.wholphin.services.ImageUrlService
+import com.github.damontecres.wholphin.services.LiveTvReminderWorker
 import com.github.damontecres.wholphin.services.LiveTvService
 import com.github.damontecres.wholphin.services.NavigationManager
 import com.github.damontecres.wholphin.ui.AppColors
@@ -26,6 +31,7 @@ import com.github.damontecres.wholphin.ui.formatSeasonEpisode
 import com.github.damontecres.wholphin.ui.isNotNullOrBlank
 import com.github.damontecres.wholphin.ui.launchDefault
 import com.github.damontecres.wholphin.ui.launchIO
+import com.github.damontecres.wholphin.ui.nav.Destination
 import com.github.damontecres.wholphin.ui.roundMinutes
 import com.github.damontecres.wholphin.ui.showToast
 import com.github.damontecres.wholphin.util.DataLoadingState
@@ -56,10 +62,12 @@ import org.jellyfin.sdk.model.api.SortOrder
 import org.jellyfin.sdk.model.api.request.GetLiveTvChannelsRequest
 import org.jellyfin.sdk.model.extensions.ticks
 import timber.log.Timber
+import java.time.Instant
 import java.time.LocalDateTime
 import java.time.ZoneId
 import java.time.temporal.ChronoUnit
 import java.util.UUID
+import java.util.concurrent.TimeUnit
 import javax.inject.Inject
 import kotlin.math.min
 import kotlin.time.Duration
@@ -69,6 +77,9 @@ import kotlin.time.Duration.Companion.seconds
 import kotlin.time.toKotlinDuration
 
 const val MAX_HOURS = 48L
+private const val STARTING_SOON_HOURS = 3L
+private const val STARTING_SOON_LIMIT = 240
+private const val MAX_RECENT_CHANNELS = 8
 
 @OptIn(FlowPreview::class)
 @HiltViewModel
@@ -92,6 +103,22 @@ class LiveTvViewModel
 
         private val _programDialogState = MutableStateFlow(ProgramDialogState())
         val programDialogState: StateFlow<ProgramDialogState> = _programDialogState
+
+        // "Watch last" and "Recent channels" are per device and per profile. They are deliberately
+        // small and local: a tuner should remember where the viewer was without making another
+        // server round trip on every launch.
+        private val channelPrefs = context.getSharedPreferences("live_tv_channels", Context.MODE_PRIVATE)
+        private val channelPrefsKey: String
+            get() = "user_${serverRepository.currentUser?.id ?: "default"}"
+
+        private val _lastChannelId = MutableStateFlow(readLastChannelId())
+        val lastChannelId: StateFlow<UUID?> = _lastChannelId
+
+        private val _recentChannelIds = MutableStateFlow(readRecentChannelIds())
+        val recentChannelIds: StateFlow<List<UUID>> = _recentChannelIds
+
+        private val _remindedProgramIds = MutableStateFlow(readRemindedProgramIds())
+        val remindedProgramIds: StateFlow<Set<UUID>> = _remindedProgramIds
 
         private val range = 100
 
@@ -138,7 +165,11 @@ class LiveTvViewModel
                                 } else {
                                     null
                                 },
-                            addCurrentProgram = false,
+                            // The current programme is included on the channel itself. That is what
+                            // makes the header count and the Now board complete for a tuner with
+                            // hundreds of channels without loading 48 hours of guide data for all of
+                            // them before the first frame.
+                            addCurrentProgram = true,
                         ),
                     )
                     val channels =
@@ -157,6 +188,13 @@ class LiveTvViewModel
                                     favorite = it.userData?.isFavorite == true,
                                 )
                             }
+                    val currentPrograms =
+                        channelData.items
+                            .mapNotNull { dto ->
+                                dto.currentProgram?.toTvProgram(guideStart)?.let { program ->
+                                    dto.id to program
+                                }
+                            }.toMap()
                     Timber.d("Got ${channels.size} channels")
                     channelsIdToIndex =
                         channels.withIndex().associateBy({ it.value.id }, { it.index })
@@ -168,12 +206,25 @@ class LiveTvViewModel
                     _state.update {
                         it.copy(
                             channels = channels,
+                            currentPrograms = currentPrograms,
+                            lastUpdated = Instant.now(),
                             loading = LoadingState.Success,
                         )
                     }
+                    fetchStartingSoon(guideStart)
                     // Now load the full range
                     if (channels.size > initial) {
                         fetchPrograms(guideStart, channels, 0..<range.coerceAtMost(channels.size))
+                    }
+                    // A tuner can carry more than one page of channels. The guide used to stop at
+                    // the first hundred, leaving the rest as channel names with no listings. Load
+                    // the remaining pages in the background, one page at a time, and merge them as
+                    // they arrive.
+                    if (channels.size > range) {
+                        for (start in range..<channels.size step range) {
+                            val end = (start + range).coerceAtMost(channels.size)
+                            fetchPrograms(guideStart, channels, start..<end)
+                        }
                     }
                 } catch (ex: Exception) {
                     Timber.e(ex, "Erroring during init")
@@ -183,19 +234,199 @@ class LiveTvViewModel
         }
 
         /**
-         * Creates a list of [LocalDateTime] for each hour from now
+         * Creates a list of [LocalDateTime] for each half hour from now.
+         *
+         * A guide ruler is a time axis. Starting with one half-hour cell and then switching to
+         * whole hours made 6:30 disappear from a 5:30 schedule: the labels were right, but the
+         * ruler jumped from a 30-minute column to 60-minute columns and the half-hour tick marks
+         * no longer lined up with the programme blocks. Half-hour columns throughout are what
+         * the reference EPG draws, and what two-hour sports fixtures need in order to read
+         * correctly.
          */
         private fun buildGuideTimes() =
             buildList {
                 val start = LocalDateTime.now().roundDownToHalfHour()
-                add(start)
-                if (start.minute == 30) {
-                    add(start.plusMinutes(30))
-                }
-                repeat(MAX_HOURS.toInt() - 1) {
-                    add(last().plusHours(1))
+                repeat(MAX_HOURS.toInt() * 2) {
+                    add(start.plusMinutes(it * 30L))
                 }
             }
+
+        /**
+         * The next few hours across every channel. This is separate from the 48-hour guide: the
+         * Now board needs one cheap answer for all channels, not a full schedule for each one.
+         */
+        private suspend fun fetchStartingSoon(guideStart: LocalDateTime) {
+            try {
+                val now = LocalDateTime.now()
+                val result =
+                    api.liveTvApi.getPrograms(
+                        GetProgramsDto(
+                            userId = serverRepository.currentUser?.id,
+                            minStartDate = now,
+                            maxStartDate = now.plusHours(STARTING_SOON_HOURS),
+                            minEndDate = now.plusMinutes(1),
+                            sortBy = listOf(ItemSortBy.START_DATE),
+                            fields = listOf(ItemFields.OVERVIEW, ItemFields.GENRES),
+                            enableImages = true,
+                            imageTypeLimit = 1,
+                            limit = STARTING_SOON_LIMIT,
+                        ),
+                    ).content.items
+                val programs =
+                    result.mapNotNull { dto -> dto.toTvProgram(guideStart) }
+                _state.update { it.copy(startingSoon = programs) }
+            } catch (ex: Exception) {
+                // The board is still useful from the guide already loaded. A failed secondary
+                // query must not turn Live TV into an error page.
+                Timber.w(ex, "Could not load starting soon programmes")
+            }
+        }
+
+        /**
+         * Re-fetch the guide the viewer is looking at, keeping the current page on screen while
+         * the request runs. This is the sheet's "Refresh guide" action, so it must actually fetch
+         * programmes rather than only the current-programme strip.
+         */
+        fun refreshGuide() {
+            viewModelScope.launchDefault {
+                val snapshot = state.value
+                if (snapshot.channels.isEmpty() || snapshot.guideTimes.isEmpty()) return@launchDefault
+                _state.update { it.copy(refreshing = true) }
+                try {
+                    val guideStart = snapshot.guideTimes.first()
+                    fetchPrograms(guideStart, snapshot.channels, 0..<snapshot.channels.size)
+                    fetchStartingSoon(guideStart)
+                    _state.update {
+                        it.copy(refreshing = false, lastUpdated = Instant.now())
+                    }
+                } catch (ex: CancellationException) {
+                    throw ex
+                } catch (ex: Exception) {
+                    Timber.e(ex, "Could not refresh the guide")
+                    _state.update { it.copy(refreshing = false) }
+                    showToast(context, context.getString(R.string.live_tv_channels_error))
+                }
+            }
+        }
+
+        /** Refresh the live strip without throwing away the guide the viewer is reading. */
+        fun refreshLiveData() {
+            viewModelScope.launchDefault {
+                val guideStart = state.value.guideTimes.firstOrNull() ?: return@launchDefault
+                try {
+                    val channelData by api.liveTvApi.getLiveTvChannels(
+                        GetLiveTvChannelsRequest(
+                            userId = serverRepository.currentUser?.id,
+                            addCurrentProgram = true,
+                            enableFavoriteSorting = true,
+                        ),
+                    )
+                    val currentPrograms =
+                        channelData.items
+                            .mapNotNull { dto ->
+                                dto.currentProgram?.toTvProgram(guideStart)?.let { program ->
+                                    dto.id to program
+                                }
+                            }.toMap()
+                    _state.update { it.copy(currentPrograms = currentPrograms) }
+                    fetchStartingSoon(guideStart)
+                } catch (ex: CancellationException) {
+                    throw ex
+                } catch (ex: Exception) {
+                    Timber.w(ex, "Could not refresh current programmes")
+                }
+            }
+        }
+
+        private fun readLastChannelId(): UUID? =
+            channelPrefs.getString("${channelPrefsKey}_last", null)?.let { raw ->
+                runCatching { UUID.fromString(raw) }.getOrNull()
+            }
+
+        private fun readRecentChannelIds(): List<UUID> =
+            channelPrefs
+                .getString("${channelPrefsKey}_recent", null)
+                ?.split(',')
+                ?.mapNotNull { runCatching { UUID.fromString(it) }.getOrNull() }
+                .orEmpty()
+
+        private fun readRemindedProgramIds(): Set<UUID> =
+            channelPrefs
+                .getString("${channelPrefsKey}_reminders", null)
+                ?.split(',')
+                ?.mapNotNull { runCatching { UUID.fromString(it) }.getOrNull() }
+                ?.toSet()
+                .orEmpty()
+
+        private fun rememberChannel(channel: TvChannel) {
+            _lastChannelId.value = channel.id
+            val recent = (_recentChannelIds.value - channel.id).toMutableList()
+            recent.add(0, channel.id)
+            _recentChannelIds.value = recent.take(MAX_RECENT_CHANNELS)
+            channelPrefs
+                .edit()
+                .putString("${channelPrefsKey}_last", channel.id.toString())
+                .putString(
+                    "${channelPrefsKey}_recent",
+                    _recentChannelIds.value.joinToString(","),
+                ).apply()
+        }
+
+        /** The one path from any Live TV surface to a channel. */
+        fun tuneChannel(channel: TvChannel) {
+            rememberChannel(channel)
+            navigationManager.navigateTo(
+                Destination.Playback(itemId = channel.id, positionMs = 0L),
+            )
+        }
+
+        /**
+         * Toggle a reminder and make it real in both directions: the set is persisted for this
+         * profile, and WorkManager holds one notification job per programme. Without the job the
+         * button would only change its own label; without the store it would forget the reminder
+         * as soon as the app was closed.
+         */
+        fun toggleReminded(
+            program: TvProgram,
+            channelName: String?,
+        ): Boolean {
+            val currently = program.id in _remindedProgramIds.value
+            _remindedProgramIds.value =
+                if (currently) {
+                    _remindedProgramIds.value - program.id
+                } else {
+                    _remindedProgramIds.value + program.id
+                }
+            channelPrefs
+                .edit()
+                .putString(
+                    "${channelPrefsKey}_reminders",
+                    _remindedProgramIds.value.joinToString(","),
+                ).apply()
+
+            val workName = "live_tv_reminder_${program.id}"
+            val workManager = WorkManager.getInstance(context)
+            if (currently) {
+                workManager.cancelUniqueWork(workName)
+            } else {
+                val delay =
+                    java.time.Duration
+                        .between(LocalDateTime.now(), program.start)
+                        .toMillis()
+                        .coerceAtLeast(0L)
+                val request =
+                    OneTimeWorkRequestBuilder<LiveTvReminderWorker>()
+                        .setInitialDelay(delay, TimeUnit.MILLISECONDS)
+                        .setInputData(
+                            workDataOf(
+                                LiveTvReminderWorker.KEY_TITLE to program.name.orEmpty(),
+                                LiveTvReminderWorker.KEY_CHANNEL to channelName.orEmpty(),
+                            ),
+                        ).build()
+                workManager.enqueueUniqueWork(workName, ExistingWorkPolicy.REPLACE, request)
+            }
+            return !currently
+        }
 
         private suspend fun refreshPrograms(
             channels: List<TvChannel>,
@@ -237,7 +468,7 @@ class LiveTvViewModel
                     channelIds = channelsToFetch.map { it.id },
                     sortBy = listOf(ItemSortBy.START_DATE),
                     userId = serverRepository.currentUser?.id,
-                    fields = listOf(ItemFields.OVERVIEW),
+                    fields = listOf(ItemFields.OVERVIEW, ItemFields.GENRES),
                 )
             val fetchedPrograms =
                 api.liveTvApi
@@ -286,6 +517,8 @@ class LiveTvViewModel
                                 subtitle = subtitle,
                                 overview = dto.overview,
                                 officialRating = dto.officialRating,
+                                genres = dto.genres.orEmpty(),
+                                productionYear = dto.productionYear,
                                 seasonEpisode =
                                     if (dto.indexNumber != null && dto.parentIndexNumber != null) {
                                         SeasonEpisode(
@@ -411,24 +644,35 @@ class LiveTvViewModel
 
             val channelProgramCount = programsByChannel.map { it.key to it.value.size }.toMap()
 
+            // Merge this page with what is already loaded. The first ten channels are fetched for
+            // the first frame, then the rest of the tuner in pages; replacing the map on every
+            // page made the guide lose every channel that was not in the latest request.
+            val previous = _state.value.programs
+            val mergedByChannel = LinkedHashMap(previous.programsByChannel).apply { putAll(programsByChannel) }
             val finalProgramList =
-                (programsByChannel.values.flatten())
+                mergedByChannel
+                    .values
+                    .flatten()
                     .sortedWith(
                         compareBy(
-                            { channelsIdToIndex[it.channelId]!! },
+                            { channelsIdToIndex[it.channelId] ?: Int.MAX_VALUE },
                             { it.start },
                         ),
                     )
+            val mergedRange =
+                minOf(previous.range.first, channelIndices.first)..
+                    maxOf(previous.range.last, channelIndices.last)
             Timber.d("Got ${fetchedPrograms.size} programs & ${finalProgramList.size} total programs")
             _state.update {
                 it.copy(
-                    channelProgramCount = channelProgramCount,
+                    channelProgramCount = it.channelProgramCount + channelProgramCount,
                     programs =
                         FetchedPrograms(
-                            channelIndices,
+                            mergedRange,
                             finalProgramList,
-                            programsByChannel,
+                            mergedByChannel,
                         ),
+                    lastUpdated = Instant.now(),
                 )
             }
         }
@@ -445,6 +689,63 @@ class LiveTvViewModel
             dto.isSports == true ||
                 dto.genres.orEmpty().any { it.trim().equals("sports", ignoreCase = true) } ||
                 dto.tags.orEmpty().any { it.trim().equals("sports", ignoreCase = true) }
+
+        /**
+         * Convert a programme DTO from the channel/current-programme or starting-soon endpoints
+         * into the same shape the guide uses. Keeping one mapping is what lets the Now board and
+         * the guide agree about titles, categories and progress.
+         */
+        private fun BaseItemDto.toTvProgram(guideStart: LocalDateTime): TvProgram? {
+            val channel = channelId ?: return null
+            val start = startDate ?: return null
+            val end = endDate ?: return null
+            val category =
+                when {
+                    isKids == true -> ProgramCategory.KIDS
+                    isMovie == true -> ProgramCategory.MOVIE
+                    isNews == true -> ProgramCategory.NEWS
+                    isSportsProgram(this) -> ProgramCategory.SPORTS
+                    else -> null
+                }
+            val cleanedName = (seriesName ?: name)?.replace(Regex("\\s+"), " ")
+            val cleanedSubtitle =
+                episodeTitle
+                    .takeIf { isSeries == true }
+                    ?.replace(Regex("\\s+"), " ")
+            return TvProgram(
+                id = id,
+                channelId = channel,
+                start = start,
+                end = end,
+                startHours = hoursBetween(guideStart, start).coerceAtLeast(0f),
+                endHours = hoursBetween(guideStart, end).coerceAtLeast(0f),
+                duration =
+                    runTimeTicks?.ticks
+                        ?: java.time.Duration.between(start, end).toKotlinDuration(),
+                name = cleanedName,
+                subtitle = cleanedSubtitle,
+                overview = overview,
+                officialRating = officialRating,
+                genres = genres.orEmpty(),
+                productionYear = productionYear,
+                seasonEpisode =
+                    if (indexNumber != null && parentIndexNumber != null) {
+                        SeasonEpisode(parentIndexNumber!!, indexNumber!!)
+                    } else {
+                        null
+                    },
+                isRecording = timerId.isNotNullOrBlank(),
+                isSeriesRecording = seriesTimerId.isNotNullOrBlank(),
+                isRepeat = isRepeat ?: false,
+                category = category,
+                imageUrl =
+                    imageUrlService.getItemImageUrl(
+                        id,
+                        ImageType.PRIMARY,
+                        tag = imageTags?.get(ImageType.PRIMARY),
+                    ),
+            )
+        }
 
         fun fetchProgramForDialog(programId: UUID) {
             _programDialogState.update { it.copy(loading = DataLoadingState.Loading) }
@@ -588,6 +889,11 @@ data class LiveTvState(
     val channels: List<TvChannel> = emptyList(),
     val channelProgramCount: Map<UUID, Int> = emptyMap(),
     val programs: FetchedPrograms = FetchedPrograms(),
+    /** Current programme for every channel, populated by the channels endpoint. */
+    val currentPrograms: Map<UUID, TvProgram> = emptyMap(),
+    /** The next three hours across every channel, for the Starting Soon rail. */
+    val startingSoon: List<TvProgram> = emptyList(),
+    val lastUpdated: Instant? = null,
 )
 
 data class ProgramDialogState(
@@ -620,6 +926,10 @@ data class TvProgram(
     val isRepeat: Boolean,
     val category: ProgramCategory?,
     val officialRating: String? = null,
+    /** The tuner's genre, used as the masthead's eyebrow when it supplies one. */
+    val genres: List<String> = emptyList(),
+    /** The tuner's year, used by the guide's programme titles like a printed EPG. */
+    val productionYear: Int? = null,
     val imageUrl: String? = null,
 ) {
     val isFake = category == ProgramCategory.FAKE
@@ -668,7 +978,10 @@ data class TvProgram(
     }
 
     companion object {
-        private val NO_DATA = WholphinApplication.instance.getString(R.string.no_data)
+        // Resolved on demand: a class-level read made constructing a TvProgram require a running
+        // Application, which put the whole guide model out of reach of plain unit tests.
+        private val NO_DATA: String
+            get() = WholphinApplication.instance.getString(R.string.no_data)
 
         fun fake(
             zeroHourStart: LocalDateTime,
