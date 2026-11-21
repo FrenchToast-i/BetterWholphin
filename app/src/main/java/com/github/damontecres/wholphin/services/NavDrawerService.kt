@@ -199,6 +199,11 @@ class NavDrawerService
             userDto: ServerUserConfig,
             discoverActive: Boolean,
         ) {
+            val allLibraries = getAllUserLibraries(user.id, userDto.tvAccess)
+            // A library literally named Kids is the same front door as the curated Kids page.
+            // Keeping both put two identical labels on the bar, so the library's own entry opens
+            // the curated page instead of the raw grid.
+            val hasKidsLibrary = allLibraries.any { isKidsLibraryName(it.name) }
             val builtins =
                 buildList {
                     // Tonight leads the list: it is the page the app opens an evening with, and
@@ -206,21 +211,22 @@ class NavDrawerService
                     // without spending a second control on the bar.
                     add(NavDrawerItem.Tonight)
                     add(NavDrawerItem.Favorites)
+                    if (!hasKidsLibrary) add(NavDrawerItem.Kids)
                     if (discoverActive) add(NavDrawerItem.Discover)
                 }
-            val allLibraries = getAllUserLibraries(user.id, userDto.tvAccess)
             val libraries =
                 allLibraries
                     .map {
                         val destination =
-                            if (it.isRecordingFolder) {
-                                Destination.Recordings(it.itemId)
-                            } else {
-                                Destination.MediaItem(
-                                    it.itemId,
-                                    it.type,
-                                    it.collectionType,
-                                )
+                            when {
+                                isKidsLibraryName(it.name) -> Destination.Kids
+                                it.isRecordingFolder -> Destination.Recordings(it.itemId)
+                                else ->
+                                    Destination.MediaItem(
+                                        it.itemId,
+                                        it.type,
+                                        it.collectionType,
+                                    )
                             }
                         ServerNavDrawerItem(
                             itemId = it.itemId,
@@ -287,5 +293,8 @@ data class NavDrawerItemState(
     val nowPlayingTitle: String? = null,
     val allLibraries: List<Library> = emptyList(),
 )
+
+private fun isKidsLibraryName(name: String?): Boolean =
+    name?.trim()?.equals("Kids", ignoreCase = true) == true
 
 val UserDto.tvAccess: Boolean get() = policy?.enableLiveTvAccess == true

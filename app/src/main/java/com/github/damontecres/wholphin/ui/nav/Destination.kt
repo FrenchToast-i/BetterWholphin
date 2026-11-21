@@ -155,6 +155,12 @@ sealed class Destination(
     data object Favorites : Destination(false)
 
     /**
+     * The library's kid-friendly shelf: a bright, rotating video page rather than a poster grid.
+     */
+    @Serializable
+    data object Kids : Destination(false)
+
+    /**
      * The tuner's fixture board, beside Live TV rather than inside its tab strip.
      *
      * Live TV is now the EPG. Sport is a different question (what is on, what is next, which

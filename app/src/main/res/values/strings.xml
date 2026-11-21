@@ -50,6 +50,18 @@
     <string name="error_loading_collection">Error loading collection %1$s</string>
     <string name="external_track">External</string>
     <string name="favorites">Favorites</string>
+    <!-- Kids: a bright, rotating shelf of the library's kid-friendly titles. -->
+    <string name="kids">Kids</string>
+    <string name="kids_badge">KIDS</string>
+    <string name="kids_pick_a_show">Pick a show</string>
+    <string name="kids_shows">Shows</string>
+    <string name="kids_watch_now">Watch now</string>
+    <string name="kids_on_now">ON NOW</string>
+    <string name="kids_loading_body">Finding shows for the little ones…</string>
+    <string name="kids_empty_title">No kids shows yet</string>
+    <string name="kids_empty_body">Add kid-friendly titles to your Jellyfin library. Titles rated TV-Y, TV-Y7, TV-G or G, or kept in a Kids library, appear here automatically.</string>
+    <string name="kids_error_title">Kids is unavailable</string>
+    <string name="kids_error_body">The library could not be loaded. Check the server and try again.</string>
     <string name="file_size">Size</string>
     <string name="forced_track">Forced</string>
     <string name="genres">Genres</string>

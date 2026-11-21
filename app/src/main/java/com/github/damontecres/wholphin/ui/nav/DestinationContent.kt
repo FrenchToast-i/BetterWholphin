@@ -43,6 +43,7 @@ import com.github.damontecres.wholphin.ui.detail.series.SeriesDetails
 import com.github.damontecres.wholphin.ui.detail.series.SeriesOverview
 import com.github.damontecres.wholphin.ui.discover.DiscoverPage
 import com.github.damontecres.wholphin.ui.discover.DiscoverRequestGrid
+import com.github.damontecres.wholphin.ui.kids.KidsPage
 import com.github.damontecres.wholphin.ui.main.HomePage
 import com.github.damontecres.wholphin.ui.main.TonightPage
 import com.github.damontecres.wholphin.ui.main.settings.HomeSettingsPage
@@ -358,6 +359,11 @@ fun DestinationContent(
                 preferences = preferences,
                 modifier = modifier,
             )
+        }
+
+        Destination.Kids -> {
+            LaunchedEffect(Unit) { onClearBackdrop.invoke() }
+            KidsPage(modifier = modifier)
         }
 
         Destination.Sports -> {

@@ -140,6 +140,11 @@ class NavDrawerViewModel
                     )
                 }
 
+                NavDrawerItem.Kids -> {
+                    setIndex(index)
+                    navigationManager.navigateToFromDrawer(Destination.Kids)
+                }
+
                 NavDrawerItem.More -> {
                     setShowMore(!state.value.moreExpanded)
                 }
@@ -187,6 +192,7 @@ class NavDrawerViewModel
                             is ServerNavDrawerItem -> it.destination
                             is NavDrawerItem.Tonight -> Destination.Tonight
                             is NavDrawerItem.Favorites -> Destination.Favorites
+                            is NavDrawerItem.Kids -> Destination.Kids
                             is NavDrawerItem.Discover -> Destination.Discover
                             is NavDrawerItem.Sports -> Destination.Sports
                             else -> null
@@ -256,6 +262,19 @@ sealed interface NavDrawerItem {
             get() = "a_favorites"
 
         override fun name(context: Context): String = context.getString(R.string.favorites)
+    }
+
+    /**
+     * The children's shelf. It is a built-in rather than a library because it gathers kid-rated
+     * titles from every library the viewer has. When a library is literally named Kids, that
+     * library's own entry opens this page instead and this built-in is left out, so the bar never
+     * shows the same label twice.
+     */
+    object Kids : NavDrawerItem {
+        override val id: String
+            get() = "a_kids"
+
+        override fun name(context: Context): String = context.getString(R.string.kids)
     }
 
     object More : NavDrawerItem {
@@ -876,6 +895,10 @@ private fun GlassTopBarScaffold(
     // The bar keeps every control but shrinks to 38dp, and the page starts immediately under it.
     val liveTvGuide =
         destination is Destination.MediaItem && destination.collectionType == CollectionType.LIVETV
+    // Kids paints its own sky all the way to the top edge, so the page starts under the bar
+    // rather than inside the padded content box every other page uses.
+    val kidsPage = destination is Destination.Kids
+    val fullBleed = liveTvGuide || kidsPage
     val compactTop = 56.dp
     Box(
         modifier =
@@ -891,15 +914,16 @@ private fun GlassTopBarScaffold(
                 Modifier
                     .fillMaxSize()
                     .padding(
-                        start = if (liveTvGuide) 0.dp else GlassTokens.screenInset,
-                        end = if (liveTvGuide) 0.dp else GlassTokens.screenInset,
-                        // Home owns its top inset so its content can scroll under the floating bar.
-                        // Live TV leaves only the compact bar's height; every other page keeps the
-                        // padded shell.
+                        start = if (fullBleed) 0.dp else GlassTokens.screenInset,
+                        end = if (fullBleed) 0.dp else GlassTokens.screenInset,
+                        // Home and Kids own their top inset so their content can scroll under the
+                        // floating bar. Live TV leaves only the compact bar's height; every other
+                        // page keeps the padded shell.
                         top =
                             when {
                                 liveTvGuide -> compactTop
                                 destination is Destination.Home -> 0.dp
+                                kidsPage -> 0.dp
                                 else -> GlassTokens.contentTop
                             },
                     ),
@@ -996,6 +1020,10 @@ internal fun rememberNavDrawerItemIcon(library: NavDrawerItem): Pair<Int, Boolea
 
                 NavDrawerItem.Favorites -> {
                     R.string.fa_heart
+                }
+
+                NavDrawerItem.Kids -> {
+                    R.string.fa_child
                 }
 
                 NavDrawerItem.More -> {
