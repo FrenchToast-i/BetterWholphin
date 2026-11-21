@@ -1,0 +1,54 @@
+name: Debug build
+
+# Option A for the dualboot setup: every push to main produces the same debug APKs in the cloud,
+# so either Windows or Linux can download one and sideload it without a local Android SDK.
+# This is deliberately separate from the tag-triggered Release workflow, which publishes the
+# signed APKs the TV's updater reads.
+
+on:
+  push:
+    branches:
+      - main
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+defaults:
+  run:
+    shell: bash
+
+jobs:
+  debug:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v5
+        with:
+          # versionName/versionCode come from git describe/the commit count, so a shallow clone
+          # would build 0.0.0 and an update that can never compare correctly.
+          fetch-depth: 0
+
+      - name: Setup JDK
+        uses: actions/setup-java@v5
+        with:
+          distribution: zulu
+          java-version: "21"
+          cache: gradle
+
+      - name: Setup Android SDK
+        uses: android-actions/setup-android@v3
+        with:
+          # The project compiles against 37; the 37 platform is published with a minor version.
+          packages: "platform-tools platforms;android-37.0 build-tools;37.0.0"
+
+      - name: Build debug APK
+        run: ./gradlew :app:assembleDefaultDebug --no-daemon
+
+      - name: Upload debug APKs
+        uses: actions/upload-artifact@v4
+        with:
+          name: wholphin-debug
+          path: app/build/outputs/apk/default/debug/*.apk
+          if-no-files-found: error
+          retention-days: 14
