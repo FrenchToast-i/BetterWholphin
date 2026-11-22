@@ -1,5 +1,7 @@
 package com.github.damontecres.wholphin.ui.playback
 
+import org.jellyfin.sdk.model.api.BaseItemKind
+import org.jellyfin.sdk.model.api.PlayMethod
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertFalse
 import org.junit.Assert.assertNull
@@ -39,5 +41,61 @@ class PlaybackSourcePolicyTest {
     @Test
     fun `play with transcoding wins for one title`() {
         assertTrue(PlaybackSourcePolicy.allowsTranscoding(true, false))
+    }
+
+    @Test
+    fun `a channel tune does not ask for intros`() {
+        assertTrue(PlaybackSourcePolicy.wantsIntros(BaseItemKind.MOVIE, 0L, cinemaMode = true))
+        assertFalse(PlaybackSourcePolicy.wantsIntros(BaseItemKind.TV_CHANNEL, 0L, cinemaMode = true))
+        assertFalse(PlaybackSourcePolicy.wantsIntros(BaseItemKind.MOVIE, 1_000L, cinemaMode = true))
+        assertFalse(PlaybackSourcePolicy.wantsIntros(BaseItemKind.MOVIE, 0L, cinemaMode = false))
+    }
+
+    @Test
+    fun `a channel still being encoded is retried`() {
+        assertTrue(
+            PlaybackSourcePolicy.retriesLiveStream(
+                type = BaseItemKind.TV_CHANNEL,
+                badHttpStatus = true,
+                playMethod = PlayMethod.TRANSCODE,
+                attempts = 0,
+            ),
+        )
+        assertTrue(
+            PlaybackSourcePolicy.retriesLiveStream(
+                type = BaseItemKind.TV_CHANNEL,
+                badHttpStatus = true,
+                playMethod = PlayMethod.DIRECT_STREAM,
+                attempts = PlaybackSourcePolicy.MAX_LIVE_RETRIES - 1,
+            ),
+        )
+    }
+
+    @Test
+    fun `a direct live failure is not retried`() {
+        assertFalse(
+            PlaybackSourcePolicy.retriesLiveStream(
+                type = BaseItemKind.TV_CHANNEL,
+                badHttpStatus = true,
+                playMethod = PlayMethod.DIRECT_PLAY,
+                attempts = 0,
+            ),
+        )
+        assertFalse(
+            PlaybackSourcePolicy.retriesLiveStream(
+                type = BaseItemKind.MOVIE,
+                badHttpStatus = true,
+                playMethod = PlayMethod.TRANSCODE,
+                attempts = 0,
+            ),
+        )
+        assertFalse(
+            PlaybackSourcePolicy.retriesLiveStream(
+                type = BaseItemKind.TV_CHANNEL,
+                badHttpStatus = true,
+                playMethod = PlayMethod.TRANSCODE,
+                attempts = PlaybackSourcePolicy.MAX_LIVE_RETRIES,
+            ),
+        )
     }
 }

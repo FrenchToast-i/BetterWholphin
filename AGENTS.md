@@ -680,6 +680,19 @@ a setting it never opens.
 - **"Play with transcoding" still wins for one title.** It is the deliberate escape hatch from a
   detail page; the switch is the household default. `PlaybackSourcePolicy.allowsTranscoding` is
   the single rule (`force || preference`), unit tested.
+- **A live tune does not wait on the panel or on codec probing.** The device profile is built while
+  the item and guide requests are in flight (`warmDeviceProfile`), and the display-mode switch runs
+  beside `setMediaItem` instead of before it (`requestDisplayMode`). The switch blocks up to five
+  seconds on the display listener plus a two second non-seamless settle, and a 60fps channel always
+  matches a different mode, so every game used to sit on a black screen for it.
+- **A channel that answers 5xx while its encoder starts is retried, not abandoned.** A remux or a
+  transcode has no first segment until ffmpeg produces one, and the error handler read that as
+  "this game has not started" and returned to the guide. `PlaybackSourcePolicy.retriesLiveStream`
+  allows two silent retries (`prepare()` after 1.5s) for anything that is not a direct play; a
+  direct channel with no stream is still a real answer. The count resets on every tune.
+- **A channel tune asks for no intros.** `PlaybackSourcePolicy.wantsIntros` keeps cinema mode for
+  files: a channel is already on the air, so that request's answer was always empty and it sat
+  between the button press and the stream request.
 - **The player's settings deck carries "Live stream source" for tuner channels.** Jellyfin's
   `MediaSourceInfo.path` is the provider/tuner URL, so `PlaybackSourcePolicy.directLiveUrl` takes
   it only when it is http(s). Choosing *Direct from provider* rebuilds the media item from that

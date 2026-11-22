@@ -84,13 +84,13 @@ fun LiveTvSportsPage(
         remember(state.currentPrograms, state.programs.programsByChannel, now) {
             liveProgramsByChannel(state.currentPrograms, state.programs.programsByChannel, now)
         }
+    // The targeted sport query when it has an answer, the guide otherwise. The page used to
+    // wait for 48 hours of every channel to find a dozen games.
+    val sportPrograms =
+        remember(state.sportFixtures, state.programs.programs) { state.sportPrograms }
     val sportsChannelIds =
-        remember(state.currentPrograms, state.programs.programs) {
-            state.programs.programs
-                .asSequence()
-                .filter { !it.isFake && it.category == ProgramCategory.SPORTS }
-                .map { it.channelId }
-                .toSet() +
+        remember(sportPrograms, state.currentPrograms) {
+            sportPrograms.map { it.channelId }.toSet() +
                 state.currentPrograms.values
                     .filter { it.category == ProgramCategory.SPORTS && !it.isFake }
                     .map { it.channelId }
@@ -126,12 +126,7 @@ fun LiveTvSportsPage(
         state.lastUpdated?.let {
             DateUtils.getRelativeTimeSpanString(it.toEpochMilli()).toString()
         }
-    val sports =
-        remember(state.programs.programs, now) {
-            state.programs.programs
-                .filter { it.category == ProgramCategory.SPORTS && !it.isFake }
-                .sortedBy { it.start }
-        }
+    val sports = remember(sportPrograms) { sportPrograms }
     val liveCount = sports.count { it.isLiveAt(now) }
     val upcoming = sports.count { it.start.isAfter(now) }
 

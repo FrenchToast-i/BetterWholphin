@@ -468,6 +468,20 @@ class PlaybackViewModelTests {
             }
         }
 
+    @Test
+    fun `A live channel tune asks for no intros`() =
+        runTest(testDispatcher) {
+            setupPreferences { cinemaMode = true }
+            val channel = tvChannel()
+            coEvery { mockUserLibraryApi.getItem(channel.id) } returns successResponse(channel)
+
+            val viewModel = createViewModel(Destination.Playback(channel.id, 0L))
+
+            // The channel is already on the air, so the request would only delay the tune
+            coVerify(exactly = 0) { mockUserLibraryApi.getIntros(any(), any()) }
+            Assert.assertNotNull(viewModel.state.value.currentPlayback)
+        }
+
     private fun setupForPlaylist() {
         coEvery { mockUserLibraryApi.getItem(playlist.id, any()) } returns
             successResponse(playlist)

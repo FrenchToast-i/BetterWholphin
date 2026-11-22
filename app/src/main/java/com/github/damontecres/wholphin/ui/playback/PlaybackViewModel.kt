@@ -123,6 +123,7 @@ import org.jellyfin.sdk.model.DeviceInfo
 import org.jellyfin.sdk.model.api.BaseItemKind
 import org.jellyfin.sdk.model.api.ImageType
 import org.jellyfin.sdk.model.api.MediaSegmentType
+import org.jellyfin.sdk.model.api.MediaSourceInfo
 import org.jellyfin.sdk.model.api.MediaStreamType
 import org.jellyfin.sdk.model.api.MediaType
 import org.jellyfin.sdk.model.api.PlayMethod
@@ -163,6 +164,14 @@ private const val PARTY_POSITION_TOLERANCE_MS = 4_000L
  * frame or a buffering stall easily costs less than one, so this never fires on its own.
  */
 private const val PARTY_SEEK_TOLERANCE_MS = 2_000L
+
+/**
+ * How long to wait before asking a channel to start again.
+ *
+ * A remuxed or transcoded channel answers 5xx until the server's encoder has produced its first
+ * segment; that is a second of startup, not a missing game.
+ */
+private const val LIVE_RETRY_DELAY_MS = 1_500L
 
 /**
  * This [ViewModel] is responsible for playing media including moving through playlists (including next up episodes)
@@ -211,6 +220,9 @@ class PlaybackViewModel
 
         private var mediaSession: MediaSession? = null
 
+        /** The display-mode switch for the current stream, which must never hold up the picture. */
+        private var displayModeJob: Job? = null
+
         // Mutex & Job for changing playlist index
         private val playlistMutex = Mutex()
         private var playlistJob: Job? = null
@@ -230,6 +242,9 @@ class PlaybackViewModel
         internal var forceTranscoding: Boolean = false
         /** The provider URL behind the current live channel, when Jellyfin supplied one. */
         private var liveDirectUrl: String? = null
+
+        /** Attempts already spent on this channel's not-yet-ready stream. */
+        private var liveStreamRetries: Int = 0
 
         /** When the current title was started, used to tell a failed open from a finished film. */
         private var playbackStartedAtMs: Long = 0L
@@ -379,6 +394,29 @@ class PlaybackViewModel
                 mediaSession?.release()
             }
             jobs.forEach { it.cancel() }
+            displayModeJob?.cancel()
+            displayModeJob = null
+        }
+
+        /**
+         * Build the device profile while the item and the guide are still being fetched.
+         *
+         * Creating it probes every codec the device advertises, which on a cold start costs more
+         * than a server round trip, and it used to run inside the tune between the channel press
+         * and the stream request. mpv ignores the profile, so a forced mpv backend skips the work.
+         */
+        private fun warmDeviceProfile() {
+            if (preferences.appPreferences.playbackPreferences.playerBackend == PlayerBackend.MPV) {
+                return
+            }
+            viewModelScope.launchIO {
+                runCatching {
+                    deviceProfileService.getOrCreateDeviceProfile(
+                        preferences.appPreferences,
+                        serverRepository.currentServer?.serverVersion,
+                    )
+                }.onFailure { Timber.w(it, "Could not warm the device profile") }
+            }
         }
 
         private suspend fun createPlayer(
@@ -451,6 +489,10 @@ class PlaybackViewModel
                     maxBitrate = maxBitrate,
                 )
             }
+            // Building the profile probes every codec on the device, which on a cold start costs
+            // more than the item request. It is cached, so starting it here means the tune that
+            // follows finds it ready instead of paying for it between the press and the stream.
+            warmDeviceProfile()
             if (preferences.appPreferences.playbackPreferences.refreshRateSwitching) {
                 addCloseable { refreshRateService.resetRefreshRate() }
             }
@@ -533,7 +575,13 @@ class PlaybackViewModel
 
             val intros =
                 // If not resuming playback & cinema mode is enabled, get potential intros
-                if (positionMs == 0L && preferences.appPreferences.playbackPreferences.cinemaMode) {
+                if (
+                    PlaybackSourcePolicy.wantsIntros(
+                        queriedItem.type,
+                        positionMs,
+                        preferences.appPreferences.playbackPreferences.cinemaMode,
+                    )
+                ) {
                     api.userLibraryApi
                         .getIntros(
                             itemId = playlistItem.id,
@@ -758,6 +806,7 @@ class PlaybackViewModel
 
                 val chapters = Chapter.fromDto(base)
                 liveDirectUrl = null
+                liveStreamRetries = 0
                 _state.update {
                     it.copy(
                         currentItemPlayback = itemPlayback,
@@ -802,7 +851,9 @@ class PlaybackViewModel
                 // A host publishes what it just started, so the other televisions open the same
                 // title at the same position. A guest's call is ignored by the service.
                 watchPartyService.onLocalPlaybackStarted(item.id, positionMs.coerceAtLeast(0L))
-                listenForSegments(item.id)
+                // A live channel has no media segments: the analyser only runs over files, so this
+                // was a server round trip on every tune whose answer was always empty.
+                if (!isLiveTv) listenForSegments(item.id)
                 return@withContext true
             }
 
@@ -1031,17 +1082,7 @@ class PlaybackViewModel
                             subtitleIndex = subtitleIndex ?: TrackIndex.DISABLED,
                         )
 
-                    preferences.appPreferences.playbackPreferences.let { prefs ->
-                        source.mediaStreams
-                            ?.firstOrNull { it.type == MediaStreamType.VIDEO }
-                            ?.let { stream ->
-                                refreshRateService.changeRefreshRate(
-                                    stream = stream,
-                                    switchRefreshRate = prefs.refreshRateSwitching,
-                                    switchResolution = prefs.resolutionSwitching,
-                                )
-                            }
-                    }
+                    requestDisplayMode(source)
                     withContext(WholphinDispatchers.Main) {
                         // TODO, don't need to release & recreate when switching streams
                         this@PlaybackViewModel.activityListener?.let {
@@ -1118,6 +1159,35 @@ class PlaybackViewModel
                     }
                 }
             }
+
+        /**
+         * Ask for the display mode this stream wants, without waiting for the panel.
+         *
+         * The switch can block for up to five seconds on the display listener plus a two second
+         * non-seamless settle, and it used to run between the server's answer and `setMediaItem`:
+         * every tune waited on the television before the player was even given the stream. A 60fps
+         * sports channel always wants another mode, so it paid the whole wait on every game. The
+         * picture now starts while the display settles, and the switch is only ever cosmetic.
+         */
+        private fun requestDisplayMode(source: MediaSourceInfo) {
+            val prefs = preferences.appPreferences.playbackPreferences
+            if (!prefs.refreshRateSwitching && !prefs.resolutionSwitching) return
+            val stream =
+                source.mediaStreams
+                    ?.firstOrNull { it.type == MediaStreamType.VIDEO }
+                    ?: return
+            displayModeJob?.cancel()
+            displayModeJob =
+                viewModelScope.launch(WholphinDispatchers.IO) {
+                    runCatching {
+                        refreshRateService.changeRefreshRate(
+                            stream = stream,
+                            switchRefreshRate = prefs.refreshRateSwitching,
+                            switchResolution = prefs.resolutionSwitching,
+                        )
+                    }.onFailure { Timber.w(it, "Could not change the display mode") }
+                }
+        }
 
         /**
          * If direct playing, can try to switch tracks without playback restarting
@@ -1835,6 +1905,32 @@ class PlaybackViewModel
             if (item.type == BaseItemKind.TV_CHANNEL &&
                 error.errorCode == PlaybackException.ERROR_CODE_IO_BAD_HTTP_STATUS
             ) {
+                val playback = state.value.currentPlayback
+                // A channel the server is still starting answers 5xx until its encoder has made
+                // the first segment. Leaving the player for that turned a one-second wait into a
+                // re-tune; a direct play runs no encoder, so its bad status is a real answer.
+                if (playback != null &&
+                    PlaybackSourcePolicy.retriesLiveStream(
+                        type = item.type,
+                        badHttpStatus = true,
+                        playMethod = playback.playMethod,
+                        attempts = liveStreamRetries,
+                    )
+                ) {
+                    liveStreamRetries++
+                    Timber.w(
+                        "Live stream answered %s while starting, retry %s/%s",
+                        error.errorCode,
+                        liveStreamRetries,
+                        PlaybackSourcePolicy.MAX_LIVE_RETRIES,
+                    )
+                    viewModelScope.launch(WholphinDispatchers.Main + ExceptionHandler()) {
+                        delay(LIVE_RETRY_DELAY_MS)
+                        player.prepare()
+                        player.play()
+                    }
+                    return
+                }
                 viewModelScope.launch(WholphinDispatchers.Main + ExceptionHandler()) {
                     showToast(
                         context,

@@ -19,6 +19,8 @@ import com.github.damontecres.wholphin.data.model.BaseItem
 import com.github.damontecres.wholphin.preferences.AppPreferences
 import com.github.damontecres.wholphin.services.FavoriteWatchManager
 import com.github.damontecres.wholphin.services.ImageUrlService
+import com.github.damontecres.wholphin.services.LiveTvCache
+import com.github.damontecres.wholphin.services.LiveTvCachePolicy
 import com.github.damontecres.wholphin.services.LiveTvReminderWorker
 import com.github.damontecres.wholphin.services.LiveTvService
 import com.github.damontecres.wholphin.services.NavigationManager
@@ -49,6 +51,7 @@ import kotlinx.coroutines.flow.debounce
 import kotlinx.coroutines.flow.distinctUntilChanged
 import kotlinx.coroutines.flow.map
 import kotlinx.coroutines.flow.update
+import kotlinx.coroutines.flow.withIndex
 import kotlinx.coroutines.sync.Mutex
 import kotlinx.coroutines.sync.withLock
 import org.jellyfin.sdk.api.client.ApiClient
@@ -79,6 +82,10 @@ import kotlin.time.toKotlinDuration
 const val MAX_HOURS = 48L
 private const val STARTING_SOON_HOURS = 3L
 private const val STARTING_SOON_LIMIT = 240
+
+/** How far ahead the Sports page looks. A week of fixtures is a calendar; the guide is 48 hours. */
+private const val SPORT_DAYS = 7L
+private const val SPORT_FIXTURE_LIMIT = 300
 private const val MAX_RECENT_CHANNELS = 8
 
 @OptIn(FlowPreview::class)
@@ -94,6 +101,7 @@ class LiveTvViewModel
         private val imageUrlService: ImageUrlService,
         private val favoriteWatchManager: FavoriteWatchManager,
         private val liveTvService: LiveTvService,
+        private val liveTvCache: LiveTvCache,
     ) : ViewModel() {
         private lateinit var channelsIdToIndex: Map<UUID, Int>
         private val mutex = Mutex()
@@ -130,11 +138,36 @@ class LiveTvViewModel
                             Pair(it.sortByRecentlyWatched, it.favoriteChannelsAtBeginning)
                         }
                     }.distinctUntilChanged()
-                    .debounce { 500.milliseconds }
-                    .collectLatest {
+                    // The debounce exists for a preference flip arriving while the viewer is in
+                    // Settings. It was also delaying the *first* emission, so every visit to Live
+                    // TV or Sports sat on a spinner for half a second before the first request
+                    // even left the app. Index 0 is the page opening: load it immediately.
+                    .withIndex()
+                    .debounce { indexed ->
+                        if (indexed.index == 0) Duration.ZERO else 500.milliseconds
+                    }.collectLatest { indexed ->
+                        val settings = indexed.value
                         Timber.v("Init due to pref change")
-                        _state.update { LiveTvState() }
-                        init(it.first, it.second)
+                        // Live TV and Sports are separate entries with a ViewModel each, so the
+                        // second page to open used to ask for the same 48 hours of guide again.
+                        // A recent snapshot is painted at once; a fresh, whole one is used
+                        // instead of the request entirely. A preference flip is a new sort order,
+                        // so it always fetches.
+                        val cached = liveTvCache.get(serverRepository.currentUser?.id)
+                        if (cached != null) {
+                            _state.value = cached.state.copy(refreshing = false)
+                            val age = cached.ageMs(System.currentTimeMillis())
+                            if (indexed.index == 0 &&
+                                cached.complete &&
+                                LiveTvCachePolicy.isFresh(age)
+                            ) {
+                                Timber.v("Live TV guide reused from cache, age=%sms", age)
+                                return@collectLatest
+                            }
+                        } else {
+                            _state.update { LiveTvState() }
+                        }
+                        init(settings.first, settings.second)
                     }
             }
         }
@@ -211,6 +244,11 @@ class LiveTvViewModel
                             loading = LoadingState.Success,
                         )
                     }
+                    // Drawable, but not yet whole: the full guide is still loading below.
+                    liveTvCache.put(serverRepository.currentUser?.id, state.value)
+                    // The Sports page asks for the games, not the schedule. This runs alongside
+                    // the guide so the tab has fixtures while the grid is still arriving.
+                    viewModelScope.launchDefault { fetchSportFixtures(guideStart) }
                     fetchStartingSoon(guideStart)
                     // Now load the full range
                     if (channels.size > initial) {
@@ -226,6 +264,9 @@ class LiveTvViewModel
                             fetchPrograms(guideStart, channels, start..<end)
                         }
                     }
+                    // Only now is the guide whole: earlier it had listings for the first ten
+                    // channels and filler for the rest, which must never skip a fetch.
+                    liveTvCache.put(serverRepository.currentUser?.id, state.value, complete = true)
                 } catch (ex: Exception) {
                     Timber.e(ex, "Erroring during init")
                     _state.update { it.copy(loading = LoadingState.Error(ex)) }
@@ -250,6 +291,46 @@ class LiveTvViewModel
                     add(start.plusMinutes(it * 30L))
                 }
             }
+
+        /**
+         * This week's games, from the server's own sport filter.
+         *
+         * Deliberately not `fetchPrograms`: that asks for every programme on up to a hundred
+         * channels over 48 hours to find a dozen matches. Everything that is still airing or has
+         * not started is sport, and the page shows a week of it.
+         */
+        private suspend fun fetchSportFixtures(guideStart: LocalDateTime) {
+            try {
+                val now = LocalDateTime.now()
+                val result =
+                    api.liveTvApi.getPrograms(
+                        GetProgramsDto(
+                            userId = serverRepository.currentUser?.id,
+                            isSports = true,
+                            minEndDate = now.plusMinutes(1),
+                            maxStartDate = now.plusDays(SPORT_DAYS),
+                            sortBy = listOf(ItemSortBy.START_DATE),
+                            fields = listOf(ItemFields.OVERVIEW, ItemFields.GENRES),
+                            enableImages = true,
+                            imageTypeLimit = 1,
+                            limit = SPORT_FIXTURE_LIMIT,
+                        ),
+                    ).content.items
+                val fixtures =
+                    result
+                        .mapNotNull { dto -> dto.toTvProgram(guideStart) }
+                        .filter { it.category == ProgramCategory.SPORTS && !it.isFake }
+                        .sortedBy { it.start }
+                Timber.d("Got %s sport fixtures", fixtures.size)
+                _state.update { it.copy(sportFixtures = fixtures) }
+            } catch (ex: CancellationException) {
+                throw ex
+            } catch (ex: Exception) {
+                // A failed sport query costs the faster list, not the page: the guide fallback is
+                // already loaded by the time the viewer can be looking at it.
+                Timber.w(ex, "Could not load sport fixtures")
+            }
+        }
 
         /**
          * The next few hours across every channel. This is separate from the 48-hour guide: the
@@ -299,6 +380,7 @@ class LiveTvViewModel
                     _state.update {
                         it.copy(refreshing = false, lastUpdated = Instant.now())
                     }
+                    liveTvCache.put(serverRepository.currentUser?.id, state.value, complete = true)
                 } catch (ex: CancellationException) {
                     throw ex
                 } catch (ex: Exception) {
@@ -893,8 +975,28 @@ data class LiveTvState(
     val currentPrograms: Map<UUID, TvProgram> = emptyMap(),
     /** The next three hours across every channel, for the Starting Soon rail. */
     val startingSoon: List<TvProgram> = emptyList(),
+    /**
+     * The games themselves, from the targeted sport query.
+     *
+     * The Sports page used to wait for the whole 48-hour guide — thousands of programmes for every
+     * channel — just to filter sport out of it. A week of fixtures is a few hundred rows, so it
+     * lands long before the guide does and the page draws from it.
+     */
+    val sportFixtures: List<TvProgram> = emptyList(),
     val lastUpdated: Instant? = null,
 )
+
+/**
+ * The sport on this guide.
+ *
+ * The targeted query wins when it has an answer; the guide stays the fallback for a tuner whose
+ * provider marks sport only in a way the server's filter does not match.
+ */
+val LiveTvState.sportPrograms: List<TvProgram>
+    get() =
+        (sportFixtures.ifEmpty { programs.programs })
+            .filter { it.category == ProgramCategory.SPORTS && !it.isFake }
+            .sortedBy { it.start }
 
 data class ProgramDialogState(
     val loading: DataLoadingState<BaseItem> = DataLoadingState.Pending,

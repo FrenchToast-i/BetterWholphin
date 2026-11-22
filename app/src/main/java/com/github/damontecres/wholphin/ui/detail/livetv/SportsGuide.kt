@@ -117,11 +117,7 @@ fun LiveTvSportsTab(
             val now = rememberTickingNow()
             val channelsById = remember(state.channels) { state.channels.associateBy { it.id } }
             val allSports =
-                remember(state.programs.programs) {
-                    state.programs.programs
-                        .filter { it.category == ProgramCategory.SPORTS && !it.isFake }
-                        .sortedBy { it.start }
-                }
+                remember(state.sportFixtures, state.programs.programs) { state.sportPrograms }
             val sports =
                 remember(allSports, channelFilter, liveOnly, channelsById, now) {
                     allSports
