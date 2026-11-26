@@ -2,6 +2,7 @@ package com.github.damontecres.wholphin.ui.nav
 
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
+import androidx.compose.runtime.remember
 import androidx.compose.ui.Modifier
 import androidx.tv.material3.MaterialTheme
 import androidx.tv.material3.Text
@@ -31,6 +32,8 @@ import com.github.damontecres.wholphin.ui.detail.PlaylistDetails
 import com.github.damontecres.wholphin.ui.detail.collection.CollectionDetails
 import com.github.damontecres.wholphin.ui.detail.discover.DiscoverMovieDetails
 import com.github.damontecres.wholphin.ui.detail.livetv.LiveTvSportsPage
+import com.github.damontecres.wholphin.ui.detail.mcu.McuTimelinePage
+import com.github.damontecres.wholphin.ui.detail.mcu.mcuCollectionCard
 import com.github.damontecres.wholphin.ui.detail.discover.DiscoverPersonPage
 import com.github.damontecres.wholphin.ui.detail.discover.DiscoverSeriesDetails
 import com.github.damontecres.wholphin.ui.detail.episode.EpisodeDetails
@@ -403,6 +406,11 @@ fun DestinationContent(
             BugReportPage(preferences, modifier)
         }
 
+        Destination.Mcu -> {
+            LaunchedEffect(Unit) { onClearBackdrop.invoke() }
+            McuTimelinePage(modifier = modifier)
+        }
+
         Destination.Discover -> {
             LaunchedEffect(Unit) { onClearBackdrop.invoke() }
             DiscoverPage(
@@ -486,6 +494,9 @@ fun CollectionFolder(
         }
 
         CollectionType.BOXSETS -> {
+            // The MCU shelf is not a collection on the server, so it is a card of its own at the
+            // front of the collections grid, in the same poster card as the box sets beside it.
+            val mcuCard = remember { mcuCollectionCard() }
             CollectionFolderGeneric(
                 preferences = preferences,
                 itemId = destination.itemId,
@@ -494,6 +505,7 @@ fun CollectionFolder(
                 playEnabled = false,
                 modifier = modifier,
                 sortOptions = MovieSortOptions,
+                leadingItems = listOf(mcuCard),
             )
         }
 

@@ -169,6 +169,15 @@ sealed class Destination(
     @Serializable
     data object Sports : Destination(false)
 
+    /**
+     * The MCU shelf: every Marvel Studios film in release order, on a timeline.
+     *
+     * Reached from the MCU tile in a movie library's Collections tab. Films the server owns play
+     * from the timeline; the rest are looked up in Discover so they can be requested.
+     */
+    @Serializable
+    data object Mcu : Destination(false)
+
     @Serializable
     data object Discover : Destination(false)
 

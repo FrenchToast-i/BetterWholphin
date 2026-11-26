@@ -394,6 +394,14 @@
     <string name="install_update">Install update</string>
     <string name="installed_version">Installed version</string>
     <string name="max_homepage_items">Max items on home page rows</string>
+    <string name="mcu">MCU</string>
+    <string name="mcu_checking">Reading your library…</string>
+    <string name="mcu_library_unavailable">Could not read your movie library</string>
+    <string name="mcu_request">Request</string>
+    <string name="mcu_request_failed">Could not reach Discover</string>
+    <string name="mcu_request_not_found">No Discover match for %1$s</string>
+    <string name="mcu_request_unavailable">Requests need a Discover (Seerr) server — set one up in Settings</string>
+    <string name="mcu_summary">%1$d films in release order · %2$d in your library</string>
     <string name="nav_drawer_pins_summary">Choose the default items to show, others will be hidden</string>
     <string name="nav_drawer_pins">Customize Navigation Drawer Items</string>
     <string name="nav_drawer_switch_on_focus_summary_off">Click to switch pages</string>

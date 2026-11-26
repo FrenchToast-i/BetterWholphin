@@ -748,6 +748,7 @@ fun CollectionFolderView(
     useSeriesForPrimary: Boolean = true,
     filterOptions: List<ItemFilterBy<*>> = DefaultFilterOptions,
     focusRequesterOnEmpty: FocusRequester? = null,
+    leadingItems: List<BaseItem> = emptyList(),
 ) = CollectionFolderView(
     preferences,
     itemId.toServerString(),
@@ -765,6 +766,7 @@ fun CollectionFolderView(
     useSeriesForPrimary = useSeriesForPrimary,
     filterOptions = filterOptions,
     focusRequesterOnEmpty = focusRequesterOnEmpty,
+    leadingItems = leadingItems,
 )
 
 @Composable
@@ -785,6 +787,7 @@ fun CollectionFolderView(
     useSeriesForPrimary: Boolean = true,
     filterOptions: List<ItemFilterBy<*>> = DefaultFilterOptions,
     focusRequesterOnEmpty: FocusRequester? = null,
+    leadingItems: List<BaseItem> = emptyList(),
 ) = CollectionFolderView(
     preferences,
     itemId.toServerString(),
@@ -802,6 +805,7 @@ fun CollectionFolderView(
     useSeriesForPrimary = useSeriesForPrimary,
     filterOptions = filterOptions,
     focusRequesterOnEmpty = focusRequesterOnEmpty,
+    leadingItems = leadingItems,
 )
 
 @Composable
@@ -822,6 +826,7 @@ fun CollectionFolderView(
     useSeriesForPrimary: Boolean = true,
     filterOptions: List<ItemFilterBy<*>> = DefaultFilterOptions,
     focusRequesterOnEmpty: FocusRequester? = null,
+    leadingItems: List<BaseItem> = emptyList(),
     viewModel: CollectionFolderViewModel =
         hiltViewModel<CollectionFolderViewModel, CollectionFolderViewModel.Factory>(
             key = viewModelKey,
@@ -865,6 +870,7 @@ fun CollectionFolderView(
         },
         filterOptions = filterOptions,
         focusRequesterOnEmpty = focusRequesterOnEmpty,
+        leadingItems = leadingItems,
     )
 }
 
@@ -915,6 +921,7 @@ fun CollectionFolderViewContent(
     positionCallback: ((columns: Int, position: Int) -> Unit)? = null,
     filterOptions: List<ItemFilterBy<*>> = DefaultFilterOptions,
     focusRequesterOnEmpty: FocusRequester? = null,
+    leadingItems: List<BaseItem> = emptyList(),
     gridCardContent: @Composable CollectionFolderViewScope.(
         GridItemDetails<BaseItem>,
     ) -> Unit = { (item, index, onClick, onLongClick, widthPx, mod) ->
@@ -1036,7 +1043,17 @@ fun CollectionFolderViewContent(
                     val gridFocusRequester = remember { FocusRequester() }
                     val pager = remember(state.items) { state.items.successValue }
 
-                    val focusedItem = pager?.getOrNull(position)
+                    // A caller may put its own cards in front of the server's items (the MCU tile
+                    // in a movie library's Collections tab), so a grid index no longer maps
+                    // straight onto the pager.
+                    val focusedItem =
+                        remember(pager, position, leadingItems) {
+                            if (position < leadingItems.size) {
+                                leadingItems.getOrNull(position)
+                            } else {
+                                pager?.getOrNull(position - leadingItems.size)
+                            }
+                        }
                     // Follow focus with the artwork on every grid, not only where the per-library
                     // "show backdrop" switch was turned on. That switch defaults to off, so every
                     // library tab (Movies, Shows, music) kept the shell's last backdrop while the
@@ -1099,6 +1116,10 @@ fun CollectionFolderViewContent(
                                     }
                                 focusRequester?.tryRequestFocus()
                             }
+                            val gridItems =
+                                remember(pager.data, leadingItems) {
+                                    if (leadingItems.isEmpty()) pager.data else leadingItems + pager.data
+                                }
                             val scope =
                                 object : CollectionFolderViewScope {
                                     override val viewOptions: ViewOptions
@@ -1116,7 +1137,7 @@ fun CollectionFolderViewContent(
                                     scope.CollectionFolderGrid(
                                         preferences = preferences,
                                         initialPosition = savedPosition,
-                                        items = pager.data,
+                                        items = gridItems,
                                         sortAndDirection = state.sortAndDirection,
                                         modifier = Modifier.fillMaxSize(),
                                         gridFocusRequester = gridFocusRequester,
@@ -1127,7 +1148,9 @@ fun CollectionFolderViewContent(
                                             position = pos
                                             positionCallback?.invoke(columns, pos)
                                         },
-                                        letterPosition = { viewActions.positionOfLetter(it) ?: -1 },
+                                        letterPosition = { letter ->
+                                            viewActions.positionOfLetter(letter)?.plus(leadingItems.size) ?: -1
+                                        },
                                         onClickPlay = gridActions.onClickPlayRemoteButton!!,
                                         focusedItem = focusedItem,
                                         cardContent = gridCardContent,
@@ -1137,7 +1160,7 @@ fun CollectionFolderViewContent(
                                         preferences = preferences,
                                         collectionType = item?.data?.collectionType,
                                         initialPosition = savedPosition,
-                                        items = pager.data,
+                                        items = gridItems,
                                         sortAndDirection = state.sortAndDirection,
                                         modifier = Modifier.fillMaxSize(),
                                         gridFocusRequester = gridFocusRequester,
@@ -1148,7 +1171,9 @@ fun CollectionFolderViewContent(
                                             position = pos
                                             positionCallback?.invoke(columns, pos)
                                         },
-                                        letterPosition = { viewActions.positionOfLetter(it) ?: -1 },
+                                        letterPosition = { letter ->
+                                            viewActions.positionOfLetter(letter)?.plus(leadingItems.size) ?: -1
+                                        },
                                         onClickPlay = gridActions.onClickPlayRemoteButton!!,
                                         focusedItem = focusedItem,
                                         itemContent = listItemContent,

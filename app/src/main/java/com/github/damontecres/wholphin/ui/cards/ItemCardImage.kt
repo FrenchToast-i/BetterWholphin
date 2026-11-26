@@ -69,16 +69,17 @@ fun ItemCardImage(
     val imageUrlService = LocalImageUrlService.current
     val imageUrl =
         remember(item, imageType, fillWidth, fillHeight) {
-            if (item != null && (fillWidth.gt(0) || fillHeight.gt(0))) {
-                imageUrlService.getItemImageUrl(
-                    item,
-                    imageType,
-                    fillWidth = fillWidth,
-                    fillHeight = fillHeight,
-                )
-            } else {
-                null
-            }
+            item?.imageUrlOverride
+                ?: if (item != null && (fillWidth.gt(0) || fillHeight.gt(0))) {
+                    imageUrlService.getItemImageUrl(
+                        item,
+                        imageType,
+                        fillWidth = fillWidth,
+                        fillHeight = fillHeight,
+                    )
+                } else {
+                    null
+                }
         }
     ItemCardImage(
         imageUrl = imageUrl,

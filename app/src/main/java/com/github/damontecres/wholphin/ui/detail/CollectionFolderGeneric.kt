@@ -10,6 +10,7 @@ import androidx.compose.ui.Modifier
 import androidx.hilt.lifecycle.viewmodel.compose.hiltViewModel
 import com.github.damontecres.wholphin.data.filter.DefaultFilterOptions
 import com.github.damontecres.wholphin.data.filter.ItemFilterBy
+import com.github.damontecres.wholphin.data.model.BaseItem
 import com.github.damontecres.wholphin.data.model.CollectionFolderFilter
 import com.github.damontecres.wholphin.preferences.UserPreferences
 import com.github.damontecres.wholphin.ui.components.CollectionFolderView
@@ -31,6 +32,7 @@ fun CollectionFolderGeneric(
     filter: CollectionFolderFilter = CollectionFolderFilter(),
     filterOptions: List<ItemFilterBy<*>> = DefaultFilterOptions,
     sortOptions: List<ItemSortBy> = VideoSortOptions,
+    leadingItems: List<BaseItem> = emptyList(),
     preferencesViewModel: PreferencesViewModel = hiltViewModel(),
 ) {
     var showHeader by rememberSaveable { mutableStateOf(true) }
@@ -59,5 +61,6 @@ fun CollectionFolderGeneric(
         defaultViewOptions = viewOptions,
         playEnabled = playEnabled,
         filterOptions = filterOptions,
+        leadingItems = leadingItems,
     )
 }
