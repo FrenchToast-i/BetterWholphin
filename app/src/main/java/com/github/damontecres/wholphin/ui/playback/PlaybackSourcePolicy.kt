@@ -1,5 +1,6 @@
 package com.github.damontecres.wholphin.ui.playback
 
+import okhttp3.HttpUrl.Companion.toHttpUrlOrNull
 import org.jellyfin.sdk.model.api.BaseItemKind
 import org.jellyfin.sdk.model.api.MediaSourceInfo
 import org.jellyfin.sdk.model.api.PlayMethod
@@ -22,7 +23,8 @@ object PlaybackSourcePolicy {
      * The tuner's own URL, when Jellyfin returned one.
      *
      * Only http(s): a local tuner can expose a device path that the television cannot open by
-     * itself, and a raw UDP/RTP address is not something ExoPlayer can fetch.
+     * itself, and a raw UDP/RTP address is not something ExoPlayer can fetch. The link is still
+     * the server's view of it until [resolveProviderUrl] has mapped its host.
      */
     fun directLiveUrl(source: MediaSourceInfo?): String? = directLiveUrl(source?.path)
 
@@ -33,6 +35,49 @@ object PlaybackSourcePolicy {
                 it.startsWith("http://", ignoreCase = true) ||
                     it.startsWith("https://", ignoreCase = true)
             }
+
+    /**
+     * Names that mean "this machine" to the server and nothing to a television.
+     *
+     * Jellyfin fetches a live channel's provider from inside its own container, so the provider
+     * link it stores is written for that network namespace; the container runtime's well-known
+     * aliases are as unusable on the LAN as `localhost` is.
+     */
+    private val serverLocalHosts =
+        setOf(
+            "localhost",
+            "0.0.0.0",
+            "127.0.0.1",
+            "::1",
+            "host.containers.internal",
+            "host.docker.internal",
+            "gateway.docker.internal",
+            "host.lima.internal",
+        )
+
+    /**
+     * A provider link as this device has to open it.
+     *
+     * The provider is published on the server's host, but Jellyfin writes its link with the name
+     * it uses from inside the container. Left alone, a channel fails before a single segment
+     * arrives (`UnknownHostException`), and so does every segment of a playlist that lists the
+     * internal name. Keeping the provider's port and path while swapping in the server's host is
+     * the same stream from the provider's side and an address the television can actually reach.
+     *
+     * A link for a host this device can already resolve is returned untouched, and so is one when
+     * the server's own address is unknown.
+     */
+    fun resolveProviderUrl(
+        url: String?,
+        serverUrl: String?,
+    ): String? {
+        val link = url ?: return null
+        val parsed = link.toHttpUrlOrNull() ?: return link
+        val host = parsed.host.trim('[', ']').lowercase()
+        if (host !in serverLocalHosts && !host.endsWith(".localhost")) return link
+        val server = serverUrl?.toHttpUrlOrNull() ?: return link
+        return parsed.newBuilder().host(server.host).build().toString()
+    }
 
     /**
      * Transcoding is off unless the viewer allowed it, and an explicit "Play with transcoding"

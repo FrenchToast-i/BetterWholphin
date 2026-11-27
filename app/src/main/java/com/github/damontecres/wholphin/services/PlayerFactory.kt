@@ -12,7 +12,6 @@ import androidx.media3.common.Player
 import androidx.media3.common.TrackSelectionParameters.AudioOffloadPreferences
 import androidx.media3.common.util.ExperimentalApi
 import androidx.media3.common.util.UnstableApi
-import androidx.media3.datasource.DefaultDataSource
 import androidx.media3.datasource.okhttp.OkHttpDataSource
 import androidx.media3.exoplayer.DefaultRenderersFactory
 import androidx.media3.exoplayer.ExoPlayer
@@ -50,6 +49,7 @@ import io.github.peerless2012.ass.media.parser.AssSubtitleParserFactory
 import io.github.peerless2012.ass.media.type.AssRenderType
 import kotlinx.coroutines.withContext
 import okhttp3.OkHttpClient
+import org.jellyfin.sdk.api.client.ApiClient
 import timber.log.Timber
 import java.lang.reflect.Constructor
 import javax.inject.Inject
@@ -64,6 +64,7 @@ class PlayerFactory
     constructor(
         @param:ApplicationContext private val context: Context,
         @param:AuthOkHttpClient private val authOkHttpClient: OkHttpClient,
+        private val api: ApiClient,
         private val deviceProfileService: DeviceProfileService,
     ) {
         @Volatile
@@ -120,7 +121,8 @@ class PlayerFactory
                                 MediaExtensionStatus.MES_DISABLED -> DefaultRenderersFactory.EXTENSION_RENDERER_MODE_OFF
                                 else -> DefaultRenderersFactory.EXTENSION_RENDERER_MODE_ON
                             }
-                        val dataSourceFactory = DefaultDataSource.Factory(context)
+                        val dataSourceFactory =
+                            ProviderHostDataSourceFactory(context) { api.baseUrl }
                         val extractorsFactory = createExtractorsFactory()
 
                         // Applied outermost so that a profile 7 track is advertised as 8.1 whichever

@@ -33,6 +33,72 @@ class PlaybackSourcePolicyTest {
     }
 
     @Test
+    fun `a container-local provider link is opened through the server host`() {
+        assertEquals(
+            "http://192.168.1.88:8101/stream/nfl.m3u8",
+            PlaybackSourcePolicy.resolveProviderUrl(
+                "http://host.containers.internal:8101/stream/nfl.m3u8",
+                "http://192.168.1.88:8096",
+            ),
+        )
+        assertEquals(
+            "http://192.168.1.88:8101/seg/nfl/segment.ts",
+            PlaybackSourcePolicy.resolveProviderUrl(
+                "http://host.docker.internal:8101/seg/nfl/segment.ts",
+                "http://192.168.1.88:8096",
+            ),
+        )
+    }
+
+    @Test
+    fun `a loopback provider link is opened through the server host`() {
+        assertEquals(
+            "http://jellyfin.local:9090/live/1.m3u8",
+            PlaybackSourcePolicy.resolveProviderUrl(
+                "http://localhost:9090/live/1.m3u8",
+                "https://jellyfin.local:8920/web/index.html",
+            ),
+        )
+        assertEquals(
+            "http://jellyfin.local:9090/live/1.m3u8",
+            PlaybackSourcePolicy.resolveProviderUrl(
+                "http://127.0.0.1:9090/live/1.m3u8",
+                "http://jellyfin.local:8096",
+            ),
+        )
+    }
+
+    @Test
+    fun `a provider link the device can resolve is left alone`() {
+        assertEquals(
+            "http://provider.example/live/1.m3u8",
+            PlaybackSourcePolicy.resolveProviderUrl(
+                "http://provider.example/live/1.m3u8",
+                "http://192.168.1.88:8096",
+            ),
+        )
+        assertEquals(
+            "http://192.168.1.88:8101/live/1.m3u8",
+            PlaybackSourcePolicy.resolveProviderUrl(
+                "http://192.168.1.88:8101/live/1.m3u8",
+                "http://192.168.1.88:8096",
+            ),
+        )
+    }
+
+    @Test
+    fun `a provider link is unchanged without a server address`() {
+        assertEquals(
+            "http://host.containers.internal:8101/live/1.m3u8",
+            PlaybackSourcePolicy.resolveProviderUrl(
+                "http://host.containers.internal:8101/live/1.m3u8",
+                null,
+            ),
+        )
+        assertNull(PlaybackSourcePolicy.resolveProviderUrl(null, "http://192.168.1.88:8096"))
+    }
+
+    @Test
     fun `transcoding is off unless allowed`() {
         assertFalse(PlaybackSourcePolicy.allowsTranscoding(false, false))
         assertTrue(PlaybackSourcePolicy.allowsTranscoding(false, true))
